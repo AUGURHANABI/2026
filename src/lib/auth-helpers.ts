@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
 import { User } from '@supabase/supabase-js';
 
 /**
@@ -11,7 +11,7 @@ export async function getAuthUser(req: NextRequest): Promise<User | null> {
   if (!token) return null;
 
   try {
-    const client = getSupabaseClient(token);
+    const client = getSupabaseClientOrThrow(token);
     const { data: { user }, error } = await client.auth.getUser();
     if (error || !user) return null;
     return user;
@@ -44,7 +44,7 @@ export async function getEnterpriseId(req: NextRequest, userId: string): Promise
   }
 
   // Look up user's current enterprise
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
   const { data: membership } = await client
     .from('enterprise_members')
     .select('enterprise_id')

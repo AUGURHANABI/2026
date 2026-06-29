@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
 
 // Helper to verify session and get user
 async function getAuthUser(req: NextRequest) {
   const token = req.headers.get('x-session');
   if (!token) return null;
 
-  const client = getSupabaseClient(token);
+  const client = getSupabaseClientOrThrow(token);
   const { data: { user }, error } = await client.auth.getUser();
   if (error || !user) return null;
   return user;
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: '请先登录' }, { status: 401 });
   }
 
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
 
   // Get all enterprises the user belongs to
   const { data: memberships, error } = await client
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '企业名称不能为空' }, { status: 400 });
   }
 
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
 
   // Generate a unique 6-character invite code
   const generateCode = () => {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
 import { getAuthUser, unauthorizedResponse } from '@/lib/auth-helpers';
 
 // POST /api/knowledge/[id]/merge-comment — 将评论内容合并到答案中
@@ -11,7 +11,7 @@ export async function POST(
   if (!user) return unauthorizedResponse();
 
   const { id } = await params;
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
   const body = await req.json();
   const { comment_id } = body;
 

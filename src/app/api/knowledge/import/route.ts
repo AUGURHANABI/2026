@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
 import { getAuthUser, getEnterpriseId, unauthorizedResponse } from '@/lib/auth-helpers';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
@@ -202,7 +202,7 @@ function mergeSameQuestionEntries(entries: ParsedEntry[]): ParsedEntry[] {
 /**
  * Look up a category by name, return its ID if found.
  */
-async function findCategoryIdByName(client: ReturnType<typeof getSupabaseClient>, name: string): Promise<string | null> {
+async function findCategoryIdByName(client: ReturnType<typeof getSupabaseClientOrThrow>, name: string): Promise<string | null> {
   const { data } = await client
     .from('categories')
     .select('id')
@@ -214,7 +214,7 @@ async function findCategoryIdByName(client: ReturnType<typeof getSupabaseClient>
 /**
  * Look up tags by comma-separated names, return their IDs.
  */
-async function findTagIdsByNames(client: ReturnType<typeof getSupabaseClient>, namesStr: string): Promise<string[]> {
+async function findTagIdsByNames(client: ReturnType<typeof getSupabaseClientOrThrow>, namesStr: string): Promise<string[]> {
   const names = namesStr.split(/[,，、]/).map((n) => n.trim()).filter(Boolean);
   if (names.length === 0) return [];
 
@@ -294,7 +294,7 @@ export async function POST(request: NextRequest) {
     const formTagIds = tagIdsRaw ? tagIdsRaw.split(',').filter(Boolean) : [];
 
     // Batch upsert entries into knowledge base
-    const client = getSupabaseClient();
+    const client = getSupabaseClientOrThrow();
     const resultEntries: Array<{ id: string; question: string; answers_count: number; action: 'created' | 'updated' | 'skipped' }> = [];
 
     for (const entry of entries) {

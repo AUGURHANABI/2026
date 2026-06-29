@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
 import { LLMClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
 import { getAuthUser, getEnterpriseId, unauthorizedResponse } from '@/lib/auth-helpers';
 
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '问题不能为空' }, { status: 400 });
   }
 
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
 
   // Search for matching knowledge entries (enterprise-scoped)
   let searchQuery = client

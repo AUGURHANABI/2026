@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
 import { getAuthUser, getEnterpriseId, unauthorizedResponse } from '@/lib/auth-helpers';
 
 export async function GET(req: NextRequest) {
@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
   if (!user) return unauthorizedResponse();
 
   const enterpriseId = await getEnterpriseId(req, user.id);
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
 
   let query = client.from('categories').select('*').order('sort_order', { ascending: true });
   if (enterpriseId) {
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   if (!user) return unauthorizedResponse();
 
   const enterpriseId = await getEnterpriseId(req, user.id);
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
   const body = await req.json();
   const { name, description, sort_order } = body;
 

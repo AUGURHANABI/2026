@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getSupabaseCredentials } from '@/storage/database/supabase-client';
+import { getSupabaseCredentialsOrThrow } from '@/storage/database/supabase-client';
 
 export async function GET() {
   try {
-    const { url, anonKey } = getSupabaseCredentials();
+    const { url, anonKey } = getSupabaseCredentialsOrThrow();
 
     if (!url || !anonKey) {
       return NextResponse.json(

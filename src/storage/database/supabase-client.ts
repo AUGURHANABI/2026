@@ -64,21 +64,18 @@ except Exception as e:
 
     envLoaded = true;
   } catch {
-    // Silently fail
+    // Silently fail - env vars may not be available during build
   }
 }
 
-function getSupabaseCredentials(): SupabaseCredentials {
+function getSupabaseCredentials(): SupabaseCredentials | null {
   loadEnv();
 
   const url = process.env.COZE_SUPABASE_URL;
   const anonKey = process.env.COZE_SUPABASE_ANON_KEY;
 
-  if (!url) {
-    throw new Error('COZE_SUPABASE_URL is not set');
-  }
-  if (!anonKey) {
-    throw new Error('COZE_SUPABASE_ANON_KEY is not set');
+  if (!url || !anonKey) {
+    return null;
   }
 
   return { url, anonKey };
@@ -89,9 +86,17 @@ function getSupabaseServiceRoleKey(): string | undefined {
   return process.env.COZE_SUPABASE_SERVICE_ROLE_KEY;
 }
 
-function getSupabaseClient(token?: string): SupabaseClient {
-  const { url, anonKey } = getSupabaseCredentials();
+/**
+ * Get or create a Supabase client for server-side use.
+ * Returns null if credentials are not available (e.g. during build).
+ */
+function getSupabaseClient(token?: string): SupabaseClient | null {
+  const creds = getSupabaseCredentials();
+  if (!creds) {
+    return null;
+  }
 
+  const { url, anonKey } = creds;
   let key: string;
   if (token) {
     key = anonKey;
@@ -125,4 +130,28 @@ function getSupabaseClient(token?: string): SupabaseClient {
   });
 }
 
-export { loadEnv, getSupabaseCredentials, getSupabaseServiceRoleKey, getSupabaseClient };
+/**
+ * Get Supabase client, throwing if credentials are not available.
+ * Use this in API routes where credentials must be present at runtime.
+ */
+function getSupabaseClientOrThrow(token?: string): SupabaseClient {
+  const client = getSupabaseClient(token);
+  if (!client) {
+    throw new Error('Supabase credentials not configured. Please set COZE_SUPABASE_URL and COZE_SUPABASE_ANON_KEY environment variables.');
+  }
+  return client;
+}
+
+/**
+ * Get Supabase credentials, throwing if not available.
+ * Use this in API routes where credentials must be present at runtime.
+ */
+function getSupabaseCredentialsOrThrow(): SupabaseCredentials {
+  const creds = getSupabaseCredentials();
+  if (!creds) {
+    throw new Error('Supabase credentials not configured. Please set COZE_SUPABASE_URL and COZE_SUPABASE_ANON_KEY environment variables.');
+  }
+  return creds;
+}
+
+export { loadEnv, getSupabaseCredentials, getSupabaseCredentialsOrThrow, getSupabaseServiceRoleKey, getSupabaseClient, getSupabaseClientOrThrow };

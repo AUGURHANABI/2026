@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
 import { getAuthUser, unauthorizedResponse } from '@/lib/auth-helpers';
-
-const supabase = getSupabaseClient();
 
 // 防重复：同一个 entry 在 30 秒内只计一次使用
 const recentUsage = new Map<string, number>();
@@ -25,6 +23,7 @@ export async function PUT(
   if (!user) return unauthorizedResponse();
 
   try {
+    const supabase = getSupabaseClientOrThrow();
     const { id } = await params;
 
     // 防重复检查：30 秒内同一条目不重复计数

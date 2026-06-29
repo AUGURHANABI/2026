@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
 import { getAuthUser, unauthorizedResponse } from '@/lib/auth-helpers';
 
 // GET /api/knowledge/[id]/comments — 获取条目评论列表
@@ -11,7 +11,7 @@ export async function GET(
   if (!user) return unauthorizedResponse();
 
   const { id } = await params;
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
 
   const { data, error } = await client
     .from('entry_comments')
@@ -33,7 +33,7 @@ export async function POST(
   if (!user) return unauthorizedResponse();
 
   const { id } = await params;
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
   const body = await req.json();
   const { author, content } = body;
 
@@ -75,7 +75,7 @@ export async function DELETE(
   if (!user) return unauthorizedResponse();
 
   const { id } = await params;
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
   const commentId = req.nextUrl.searchParams.get('comment_id');
 
   if (!commentId) {

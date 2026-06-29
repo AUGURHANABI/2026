@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
 import { getAuthUser, unauthorizedResponse } from '@/lib/auth-helpers';
 
 // PUT /api/knowledge/[id]/rate — 给知识库条目评分
@@ -11,7 +11,7 @@ export async function PUT(
   if (!user) return unauthorizedResponse();
 
   const { id } = await params;
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
   const body = await req.json();
   const { effectiveness_score } = body;
 

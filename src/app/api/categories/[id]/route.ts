@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
 import { getAuthUser, getEnterpriseId, unauthorizedResponse } from '@/lib/auth-helpers';
 
 export async function GET(
@@ -10,7 +10,7 @@ export async function GET(
   if (!user) return unauthorizedResponse();
 
   const { id } = await params;
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
   const { data, error } = await client
     .from('categories')
     .select('*')
@@ -30,7 +30,7 @@ export async function PUT(
   if (!user) return unauthorizedResponse();
 
   const { id } = await params;
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
   const body = await req.json();
   const { name, description, sort_order } = body;
 
@@ -54,7 +54,7 @@ export async function DELETE(
   if (!user) return unauthorizedResponse();
 
   const { id } = await params;
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
 
   // Check if any knowledge entries use this category
   const { count, error: countError } = await client

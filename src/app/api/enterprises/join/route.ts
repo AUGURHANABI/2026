@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
 
 // POST /api/enterprises/join - Join an enterprise by invite code
 export async function POST(req: NextRequest) {
@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '请先登录' }, { status: 401 });
   }
 
-  const client = getSupabaseClient(token);
+  const client = getSupabaseClientOrThrow(token);
   const { data: { user }, error: authError } = await client.auth.getUser();
   if (authError || !user) {
     return NextResponse.json({ error: '认证失败' }, { status: 401 });
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '请输入邀请码' }, { status: 400 });
   }
 
-  const serviceClient = getSupabaseClient();
+  const serviceClient = getSupabaseClientOrThrow();
 
   // Find enterprise by invite code
   const { data: enterprise, error: findError } = await serviceClient

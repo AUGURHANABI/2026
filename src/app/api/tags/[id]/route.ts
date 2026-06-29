@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
 import { getAuthUser, unauthorizedResponse } from '@/lib/auth-helpers';
 
 export async function PUT(
@@ -10,7 +10,7 @@ export async function PUT(
   if (!user) return unauthorizedResponse();
 
   const { id } = await params;
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
   const body = await req.json();
   const { name, color } = body;
 
@@ -34,7 +34,7 @@ export async function DELETE(
   if (!user) return unauthorizedResponse();
 
   const { id } = await params;
-  const client = getSupabaseClient();
+  const client = getSupabaseClientOrThrow();
   const { error } = await client.from('tags').delete().eq('id', id);
   if (error) throw new Error(`删除标签失败: ${error.message}`);
   return NextResponse.json({ success: true });
