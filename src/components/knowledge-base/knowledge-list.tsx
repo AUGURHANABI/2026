@@ -62,7 +62,10 @@ export function KnowledgeList() {
   const [importResult, setImportResult] = useState<{
     total_parsed: number;
     imported: number;
-    entries: Array<{ id: string; question: string; answers_count?: number }>;
+    created: number;
+    updated: number;
+    skipped: number;
+    entries: Array<{ id: string; question: string; answers_count?: number; action: 'created' | 'updated' | 'skipped' }>;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -812,17 +815,33 @@ export function KnowledgeList() {
             {importResult && (
               <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
                 <p className="font-medium text-emerald-800 mb-2">导入完成</p>
-                <p className="text-sm text-emerald-700">
-                  从文件中解析出 <span className="font-semibold">{importResult.total_parsed}</span> 组问答，
-                  成功导入 <span className="font-semibold">{importResult.imported}</span> 条话术
+                <p className="text-sm text-emerald-700 mb-1">
+                  从文件中解析出 <span className="font-semibold">{importResult.total_parsed}</span> 组问答
                 </p>
+                <div className="flex gap-4 text-sm">
+                  <span className="text-cyan-700">新增 <span className="font-semibold">{importResult.created}</span></span>
+                  <span className="text-amber-700">更新 <span className="font-semibold">{importResult.updated}</span></span>
+                  <span className="text-slate-500">跳过 <span className="font-semibold">{importResult.skipped}</span></span>
+                </div>
                 {importResult.entries.length > 0 && (
                   <div className="mt-3 space-y-1">
                     {importResult.entries.map((entry, i) => (
-                      <p key={entry.id} className="text-xs text-emerald-600 truncate">
-                        {i + 1}. {entry.question}
+                      <p key={entry.id} className="text-xs truncate flex items-center gap-1.5">
+                        <span className={
+                          entry.action === 'created' ? 'text-cyan-600' :
+                          entry.action === 'updated' ? 'text-amber-600' : 'text-slate-400'
+                        }>
+                          {i + 1}. {entry.question}
+                        </span>
+                        <span className={`shrink-0 inline-block px-1.5 py-0 rounded text-[10px] font-medium ${
+                          entry.action === 'created' ? 'bg-cyan-100 text-cyan-700' :
+                          entry.action === 'updated' ? 'bg-amber-100 text-amber-700' :
+                          'bg-slate-100 text-slate-500'
+                        }`}>
+                          {entry.action === 'created' ? '新增' : entry.action === 'updated' ? '更新' : '跳过'}
+                        </span>
                         {entry.answers_count && entry.answers_count > 1 && (
-                          <span className="ml-1 text-amber-600">({entry.answers_count}个回答版本)</span>
+                          <span className="text-amber-600 shrink-0">({entry.answers_count}个版本)</span>
                         )}
                       </p>
                     ))}
