@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import mammoth from 'mammoth';
+import * as XLSX from 'xlsx';
 
 interface ParsedEntry {
   question: string;
   answer: string;
+  category?: string;
+  tags?: string;
 }
 
 /**
@@ -36,7 +39,6 @@ function parseEntriesFromText(rawText: string): ParsedEntry[] {
   if (foundExplicit) return entries;
 
   // Strategy 2: Numbered items with blank-line separation
-  // Match patterns like "1. question text\nanswer text" separated by blank lines
   const numberedPattern = /(?:^|\n\s*\n)(\d+[.、)）]\s*)([\s\S]*?)(?=(?:\n\s*\n\d+[.、)）])|$)/g;
   let numberedMatch: RegExpExecArray | null;
   let foundNumbered = false;
@@ -45,7 +47,6 @@ function parseEntriesFromText(rawText: string): ParsedEntry[] {
     const block = numberedMatch[2].trim();
     if (!block) continue;
 
-    // Split block into question and answer by first line break
     const firstBreakIdx = block.search(/\n/);
     if (firstBreakIdx > 0) {
       const question = block.substring(0, firstBreakIdx).trim();
@@ -81,7 +82,6 @@ function parseEntriesFromText(rawText: string): ParsedEntry[] {
 function parseEntriesFromHtml(html: string): ParsedEntry[] {
   const entries: ParsedEntry[] = [];
 
-  // Try to extract from tables (two-column: question, answer)
   const tableRowPattern = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
   const cellPattern = /<td[^>]*>([\s\S]*?)<\/td>/gi;
 
@@ -91,7 +91,6 @@ function parseEntriesFromHtml(html: string): ParsedEntry[] {
     const cells: string[] = [];
     let cellMatch: RegExpExecArray | null;
     while ((cellMatch = cellPattern.exec(rowContent)) !== null) {
-      // Strip HTML tags to get plain text
       const text = cellMatch[1]
         .replace(/<[^>]+>/g, '')
         .replace(/&nbsp;/g, ' ')
@@ -106,12 +105,125 @@ function parseEntriesFromHtml(html: string): ParsedEntry[] {
       const question = cells[0];
       const answer = cells[1];
       if (question && answer) {
-        entries.push({ question, answer });
+        entries.push({
+          question,
+          answer,
+          category: cells[2] || undefined,
+          tags: cells[3] || undefined,
+        });
       }
     }
   }
 
   return entries;
+}
+
+/**
+ * Parse Excel (.xlsx) file into Q&A pairs.
+ * Columns: 问题, 答案, 分类, 标签
+ * Same question in multiple rows → multiple answer variations merged.
+ */
+function parseEntriesFromXlsx(buffer: Buffer): ParsedEntry[] {
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  const sheetName = wb.SheetNames[0];
+  const ws = wb.Sheets[sheetName];
+  const rows: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+  if (rows.length < 2) return [];
+
+  // First row is header
+  const header = rows[0].map((h) => String(h ?? '').trim());
+  const colQuestion = header.findIndex((h) => /问题|question/i.test(h));
+  const colAnswer = header.findIndex((h) => /答案|answer/i.test(h));
+  const colCategory = header.findIndex((h) => /分类|category/i.test(h));
+  const colTags = header.findIndex((h) => /标签|tag/i.test(h));
+
+  if (colQuestion < 0 || colAnswer < 0) return [];
+
+  const entries: ParsedEntry[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const question = String(row[colQuestion] ?? '').trim();
+    const answer = String(row[colAnswer] ?? '').trim();
+    if (!question || !answer) continue;
+
+    entries.push({
+      question,
+      answer,
+      category: colCategory >= 0 ? String(row[colCategory] ?? '').trim() || undefined : undefined,
+      tags: colTags >= 0 ? String(row[colTags] ?? '').trim() || undefined : undefined,
+    });
+  }
+
+  return entries;
+}
+
+/**
+ * Merge entries with the same question: combine multiple answers into one entry.
+ * Answers are joined with clear separators like "回答一：...\n\n回答二：..."
+ */
+function mergeSameQuestionEntries(entries: ParsedEntry[]): ParsedEntry[] {
+  const grouped = new Map<string, { answers: string[]; category?: string; tags?: string }>();
+
+  for (const entry of entries) {
+    const key = entry.question.trim();
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        answers: [],
+        category: entry.category,
+        tags: entry.tags,
+      });
+    }
+    const group = grouped.get(key)!;
+    group.answers.push(entry.answer);
+    // Use the first non-empty category/tags
+    if (!group.category && entry.category) group.category = entry.category;
+    if (!group.tags && entry.tags) group.tags = entry.tags;
+  }
+
+  const merged: ParsedEntry[] = [];
+  for (const [question, group] of grouped) {
+    let answer: string;
+    if (group.answers.length === 1) {
+      answer = group.answers[0];
+    } else {
+      // Multiple answers for same question → merge with numbered labels
+      answer = group.answers
+        .map((a, i) => `回答${['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'][i] ?? (i + 1)}：${a}`)
+        .join('\n\n');
+    }
+    merged.push({ question, answer, category: group.category, tags: group.tags });
+  }
+
+  return merged;
+}
+
+/**
+ * Look up a category by name, return its ID if found.
+ */
+async function findCategoryIdByName(client: ReturnType<typeof getSupabaseClient>, name: string): Promise<string | null> {
+  const { data } = await client
+    .from('categories')
+    .select('id')
+    .ilike('name', name)
+    .maybeSingle();
+  return data ? (data as Record<string, unknown>).id as string : null;
+}
+
+/**
+ * Look up tags by comma-separated names, return their IDs.
+ */
+async function findTagIdsByNames(client: ReturnType<typeof getSupabaseClient>, namesStr: string): Promise<string[]> {
+  const names = namesStr.split(/[,，、]/).map((n) => n.trim()).filter(Boolean);
+  if (names.length === 0) return [];
+
+  const { data } = await client
+    .from('tags')
+    .select('id, name')
+    .in('name', names);
+
+  if (!data) return [];
+  return data.map((t: Record<string, unknown>) => t.id as string);
 }
 
 export async function POST(request: NextRequest) {
@@ -126,57 +238,82 @@ export async function POST(request: NextRequest) {
     }
 
     const fileName = file.name.toLowerCase();
-    if (!fileName.endsWith('.docx') && !fileName.endsWith('.doc')) {
+    const isXlsx = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+    const isDocx = fileName.endsWith('.docx') || fileName.endsWith('.doc');
+
+    if (!isXlsx && !isDocx) {
       return NextResponse.json(
-        { error: '仅支持 .docx 格式的 Word 文件' },
+        { error: '仅支持 .xlsx 和 .docx 格式的文件' },
         { status: 400 }
       );
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+    let entries: ParsedEntry[];
 
-    // Extract text and HTML from Word document
-    const [textResult, htmlResult] = await Promise.all([
-      mammoth.extractRawText({ buffer }),
-      mammoth.convertToHtml({ buffer }),
-    ]);
+    if (isXlsx) {
+      entries = parseEntriesFromXlsx(buffer);
+    } else {
+      // Word document
+      const [textResult, htmlResult] = await Promise.all([
+        mammoth.extractRawText({ buffer }),
+        mammoth.convertToHtml({ buffer }),
+      ]);
 
-    const rawText = textResult.value;
-    const html = htmlResult.value;
+      const rawText = textResult.value;
+      const html = htmlResult.value;
 
-    // Try parsing from both text and HTML
-    let entries = parseEntriesFromText(rawText);
-
-    // If text parsing didn't yield results, try HTML (table-based)
-    if (entries.length === 0) {
-      entries = parseEntriesFromHtml(html);
+      entries = parseEntriesFromText(rawText);
+      if (entries.length === 0) {
+        entries = parseEntriesFromHtml(html);
+      }
     }
 
     if (entries.length === 0) {
       return NextResponse.json(
         {
           error:
-            '未能从文档中解析出问答对。请确保文档格式为以下之一：\n1. "问题：xxx / 答案：xxx" 标记格式\n2. 编号列表格式（1. 问题，后跟答案）\n3. 两列表格（问题列 + 答案列）',
+            '未能从文件中解析出问答对。请确保文件格式正确：\n1. Excel模板：问题、答案、分类（可选）、标签（可选）\n2. Word文档："问题：/答案：" 标记格式\n3. Word文档：编号列表或两列表格',
         },
         { status: 400 }
       );
     }
 
-    // Parse tag IDs
-    const tagIds = tagIdsRaw ? tagIdsRaw.split(',').filter(Boolean) : [];
+    // Merge same-question entries (multiple answers → one entry)
+    entries = mergeSameQuestionEntries(entries);
+
+    // Parse tag IDs from form
+    const formTagIds = tagIdsRaw ? tagIdsRaw.split(',').filter(Boolean) : [];
 
     // Batch insert entries into knowledge base
     const client = getSupabaseClient();
-    const createdEntries: Array<{ id: string; question: string }> = [];
+    const createdEntries: Array<{ id: string; question: string; answers_count: number }> = [];
 
     for (const entry of entries) {
+      // Resolve category: form override > spreadsheet column
+      let resolvedCategoryId = categoryId || null;
+      if (!resolvedCategoryId && entry.category) {
+        resolvedCategoryId = await findCategoryIdByName(client, entry.category);
+      }
+
+      // Resolve tags: merge form tags + spreadsheet tags
+      let resolvedTagIds = [...formTagIds];
+      if (entry.tags) {
+        const spreadsheetTagIds = await findTagIdsByNames(client, entry.tags);
+        const merged = new Set([...resolvedTagIds, ...spreadsheetTagIds]);
+        resolvedTagIds = [...merged];
+      }
+
+      // Count how many answers were merged for this entry
+      const answersCount = (entry.answer.match(/回答[一二三四五六七八九十]+：/g) || []).length || 1;
+
       // Create knowledge entry
       const { data: newEntry, error: entryError } = await client
         .from('knowledge_entries')
         .insert({
           question: entry.question,
           answer: entry.answer,
-          category_id: categoryId || null,
+          category_id: resolvedCategoryId,
           current_version: 1,
         })
         .select('id, question')
@@ -196,12 +333,12 @@ export async function POST(request: NextRequest) {
         version: 1,
         question: entry.question,
         answer: entry.answer,
-        change_note: '通过 Word 文档导入',
+        change_note: `通过${isXlsx ? 'Excel' : 'Word'}文档导入${answersCount > 1 ? `（含${answersCount}个回答版本）` : ''}`,
       });
 
       // Create tag associations
-      if (tagIds.length > 0) {
-        const tagRecords = tagIds.map((tagId) => ({
+      if (resolvedTagIds.length > 0) {
+        const tagRecords = resolvedTagIds.map((tagId) => ({
           entry_id: entryId,
           tag_id: tagId,
         }));
@@ -211,6 +348,7 @@ export async function POST(request: NextRequest) {
       createdEntries.push({
         id: entryId,
         question: (newEntry as Record<string, unknown>).question as string,
+        answers_count: answersCount,
       });
     }
 

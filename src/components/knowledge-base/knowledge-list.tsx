@@ -20,6 +20,7 @@ import {
   deleteKnowledge,
   fetchEntryVersions,
   importWord,
+  downloadTemplate,
   type KnowledgeEntry,
   type Category,
   type Tag,
@@ -61,7 +62,7 @@ export function KnowledgeList() {
   const [importResult, setImportResult] = useState<{
     total_parsed: number;
     imported: number;
-    entries: Array<{ id: string; question: string }>;
+    entries: Array<{ id: string; question: string; answers_count?: number }>;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -235,6 +236,17 @@ export function KnowledgeList() {
         <div className="flex gap-2">
           <Button
             variant="outline"
+            size="sm"
+            onClick={() => { downloadTemplate(); }}
+            className="border-slate-300 text-slate-600 hover:bg-slate-50"
+          >
+            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            下载模板
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => {
               resetImportForm();
               setShowImport(true);
@@ -244,7 +256,7 @@ export function KnowledgeList() {
             <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
-            导入 Word
+            导入话术
           </Button>
           <Button
             onClick={() => {
@@ -692,22 +704,28 @@ export function KnowledgeList() {
         </DialogContent>
       </Dialog>
 
-      {/* Import Word Dialog */}
+      {/* Import Dialog */}
       <Dialog open={showImport} onOpenChange={(open) => { setShowImport(open); if (!open) resetImportForm(); }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>从 Word 文档导入话术</DialogTitle>
+            <DialogTitle>导入话术</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {/* Format guide */}
             <div className="bg-slate-50 rounded-lg p-4 text-sm text-slate-600 space-y-2">
-              <p className="font-medium text-slate-700">支持的文档格式：</p>
+              <p className="font-medium text-slate-700">支持的文件格式：</p>
               <div className="space-y-1.5">
-                <p>1. <span className="font-mono text-xs bg-white px-1 rounded">问题：xxx / 答案：xxx</span> 标记格式</p>
-                <p>2. 编号列表格式（1. 问题，后跟答案，空行分隔）</p>
-                <p>3. 两列表格（第一列问题，第二列答案）</p>
+                <p>1. <span className="font-mono text-xs bg-white px-1 rounded">.xlsx</span> Excel模板 — 推荐使用，同一问题可写多行不同答案</p>
+                <p>2. <span className="font-mono text-xs bg-white px-1 rounded">.docx</span> Word文档 — 问题：/答案：标记、编号列表或表格</p>
               </div>
-              <p className="text-xs text-slate-400">仅支持 .docx 格式</p>
+              <div className="border-t border-slate-200 pt-2 mt-2">
+                <p className="font-medium text-slate-700">Excel模板说明：</p>
+                <ul className="list-disc list-inside text-xs text-slate-500 space-y-0.5">
+                  <li>第一列「问题」、第二列「答案」、第三列「分类」（可选）、第四列「标签」（可选，逗号分隔）</li>
+                  <li>同一问题出现在多行时，各行的答案会合并为多个回答版本</li>
+                  <li>点击上方「下载模板」获取标准模板文件</li>
+                </ul>
+              </div>
             </div>
 
             {/* File input */}
@@ -715,7 +733,7 @@ export function KnowledgeList() {
               <Label>选择文件 *</Label>
               <div className="mt-1">
                 <label
-                  htmlFor="word-import"
+                  htmlFor="file-import"
                   className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
                     importFile ? 'border-cyan-500 bg-cyan-50' : 'border-slate-300 bg-white hover:bg-slate-50'
                   }`}
@@ -733,15 +751,15 @@ export function KnowledgeList() {
                       <svg className="w-8 h-8 mx-auto mb-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                       </svg>
-                      <p className="text-sm text-slate-500">点击上传 Word 文件</p>
-                      <p className="text-xs text-slate-400 mt-1">支持 .docx 格式</p>
+                      <p className="text-sm text-slate-500">点击上传文件</p>
+                      <p className="text-xs text-slate-400 mt-1">支持 .xlsx / .docx 格式</p>
                     </div>
                   )}
                   <input
-                    id="word-import"
+                    id="file-import"
                     ref={fileInputRef}
                     type="file"
-                    accept=".docx"
+                    accept=".xlsx,.xls,.docx"
                     className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
@@ -795,7 +813,7 @@ export function KnowledgeList() {
               <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
                 <p className="font-medium text-emerald-800 mb-2">导入完成</p>
                 <p className="text-sm text-emerald-700">
-                  从文档中解析出 <span className="font-semibold">{importResult.total_parsed}</span> 组问答，
+                  从文件中解析出 <span className="font-semibold">{importResult.total_parsed}</span> 组问答，
                   成功导入 <span className="font-semibold">{importResult.imported}</span> 条话术
                 </p>
                 {importResult.entries.length > 0 && (
@@ -803,6 +821,9 @@ export function KnowledgeList() {
                     {importResult.entries.map((entry, i) => (
                       <p key={entry.id} className="text-xs text-emerald-600 truncate">
                         {i + 1}. {entry.question}
+                        {entry.answers_count && entry.answers_count > 1 && (
+                          <span className="ml-1 text-amber-600">({entry.answers_count}个回答版本)</span>
+                        )}
                       </p>
                     ))}
                   </div>

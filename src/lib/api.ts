@@ -254,3 +254,17 @@ export async function importWord(data: {
   }
   return res.json();
 }
+
+export async function downloadTemplate() {
+  const res = await fetch(`${API_BASE}/knowledge/template`);
+  if (!res.ok) throw new Error('下载模板失败');
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'inquiry_scripts_template.xlsx';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}
