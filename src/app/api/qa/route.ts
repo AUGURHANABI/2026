@@ -14,15 +14,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '问题不能为空' }, { status: 400 });
   }
 
+  // Reuse a single client for all operations (no token = service role)
   const client = getSupabaseClientOrThrow();
 
   // Search for matching knowledge entries (enterprise-scoped)
+  // Use text search with OR conditions - limit to top 3 for speed
   let searchQuery = client
     .from('knowledge_entries')
     .select('id, question, answer, categories(name)')
     .eq('is_active', true)
     .or(`question.ilike.%${question}%,answer.ilike.%${question}%`)
-    .limit(5);
+    .limit(3);
   searchQuery = enterpriseId ? searchQuery.eq('enterprise_id', enterpriseId) : searchQuery.is('enterprise_id', null);
 
   const { data: entries, error: searchError } = await searchQuery;
@@ -85,7 +87,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Save to QA history (enterprise-scoped)
+        // Save to QA history (enterprise-scoped) - fire and forget
         const historyInsert: Record<string, unknown> = {
           question,
           answer: fullAnswer,
@@ -96,34 +98,32 @@ export async function POST(req: NextRequest) {
           historyInsert.enterprise_id = enterpriseId;
         }
 
-        const { error: historyError } = await client
+        // Non-blocking save
+        client
           .from('qa_history')
-          .insert(historyInsert);
-
-        if (historyError) {
-          console.error('保存问答历史失败:', historyError.message);
-        }
-
-        // Update usage count for matched entry
-        if (matchedEntryId) {
-          const { error: updateError } = await client.rpc('increment_usage_count', {
-            entry_id: matchedEntryId,
-          });
-          // RPC may not exist, so we use a direct update approach
-          if (updateError) {
-            // Fallback: direct update
-            const { data: entry } = await client
-              .from('knowledge_entries')
-              .select('usage_count')
-              .eq('id', matchedEntryId)
-              .maybeSingle();
-            if (entry) {
-              await client
-                .from('knowledge_entries')
-                .update({ usage_count: (entry.usage_count as number) + 1 })
-                .eq('id', matchedEntryId);
+          .insert(historyInsert)
+          .then(({ error: historyError }) => {
+            if (historyError) {
+              console.error('保存问答历史失败:', historyError.message);
             }
-          }
+          });
+
+        // Update usage count for matched entry - fire and forget
+        if (matchedEntryId) {
+          client
+            .from('knowledge_entries')
+            .select('usage_count')
+            .eq('id', matchedEntryId)
+            .maybeSingle()
+            .then(({ data: entry }) => {
+              if (entry) {
+                client
+                  .from('knowledge_entries')
+                  .update({ usage_count: (entry.usage_count as number) + 1 })
+                  .eq('id', matchedEntryId)
+                  .then(() => {});
+              }
+            });
         }
 
         controller.enqueue(
