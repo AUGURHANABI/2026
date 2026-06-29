@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getAuthUser, getEnterpriseId, unauthorizedResponse } from '@/lib/auth-helpers';
 
-export async function GET(request: NextRequest) {
+export async function GET(req: NextRequest) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorizedResponse();
+
+  const enterpriseId = await getEnterpriseId(req, user.id);
   const client = getSupabaseClient();
-  const searchParams = request.nextUrl.searchParams;
+  const searchParams = req.nextUrl.searchParams;
   const category_id = searchParams.get('category_id');
   const tag_id = searchParams.get('tag_id');
   const search = searchParams.get('search');
@@ -15,6 +20,13 @@ export async function GET(request: NextRequest) {
     .from('knowledge_entries')
     .select('*, categories(id, name), knowledge_entry_tags(tag_id, tags(id, name, color))', { count: 'exact' })
     .order('created_at', { ascending: false });
+
+  // Enterprise isolation
+  if (enterpriseId) {
+    query = query.eq('enterprise_id', enterpriseId);
+  } else {
+    query = query.is('enterprise_id', null);
+  }
 
   if (category_id) {
     query = query.eq('category_id', category_id);
@@ -59,9 +71,13 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ data: transformed, total: count, page, page_size: pageSize });
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorizedResponse();
+
+  const enterpriseId = await getEnterpriseId(req, user.id);
   const client = getSupabaseClient();
-  const body = await request.json();
+  const body = await req.json();
   const { question, answer, category_id, tag_ids } = body;
 
   if (!question || !answer) {
@@ -69,9 +85,14 @@ export async function POST(request: NextRequest) {
   }
 
   // Create the entry
+  const insertData: Record<string, unknown> = { question, answer, category_id, current_version: 1 };
+  if (enterpriseId) {
+    insertData.enterprise_id = enterpriseId;
+  }
+
   const { data: entry, error: entryError } = await client
     .from('knowledge_entries')
-    .insert({ question, answer, category_id, current_version: 1 })
+    .insert(insertData)
     .select()
     .maybeSingle();
 

@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getAuthUser, unauthorizedResponse } from '@/lib/auth-helpers';
 
 export async function PUT(
-  request: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorizedResponse();
+
   const { id } = await params;
   const client = getSupabaseClient();
-  const body = await request.json();
+  const body = await req.json();
   const { effectiveness_rating } = body;
 
   if (effectiveness_rating === undefined || effectiveness_rating < 1 || effectiveness_rating > 5) {

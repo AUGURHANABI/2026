@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getAuthUser, unauthorizedResponse } from '@/lib/auth-helpers';
 
 const supabase = getSupabaseClient();
 
@@ -17,9 +18,12 @@ function cleanupOldEntries() {
 }
 
 export async function PUT(
-  _request: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorizedResponse();
+
   try {
     const { id } = await params;
 

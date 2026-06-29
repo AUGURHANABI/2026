@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getAuthUser, getEnterpriseId, unauthorizedResponse } from '@/lib/auth-helpers';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 
@@ -228,6 +229,13 @@ async function findTagIdsByNames(client: ReturnType<typeof getSupabaseClient>, n
 
 export async function POST(request: NextRequest) {
   try {
+    // Auth check
+    const user = await getAuthUser(request);
+    if (!user) {
+      return unauthorizedResponse();
+    }
+    const enterpriseId = await getEnterpriseId(request, user.id);
+
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     const categoryId = formData.get('category_id') as string | null;
@@ -307,12 +315,17 @@ export async function POST(request: NextRequest) {
       // Count how many answers were merged for this entry
       const answersCount = (entry.answer.match(/回答[一二三四五六七八九十]+：/g) || []).length || 1;
 
-      // Check if an entry with the same question already exists
-      const { data: existing } = await client
+      // Check if an entry with the same question already exists (within same enterprise)
+      let existingQuery = client
         .from('knowledge_entries')
         .select('id, answer, current_version')
-        .ilike('question', entry.question.trim())
-        .maybeSingle();
+        .ilike('question', entry.question.trim());
+      if (enterpriseId) {
+        existingQuery = existingQuery.eq('enterprise_id', enterpriseId);
+      } else {
+        existingQuery = existingQuery.is('enterprise_id', null);
+      }
+      const { data: existing } = await existingQuery.maybeSingle();
 
       if (existing) {
         const existingId = (existing as Record<string, unknown>).id as string;
@@ -381,6 +394,7 @@ export async function POST(request: NextRequest) {
             question: entry.question,
             answer: entry.answer,
             category_id: resolvedCategoryId,
+            enterprise_id: enterpriseId,
             current_version: 1,
           })
           .select('id, question')

@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
 import { LLMClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
+import { getAuthUser, getEnterpriseId, unauthorizedResponse } from '@/lib/auth-helpers';
 
-export async function POST(request: NextRequest) {
-  const { question } = await request.json();
+export async function POST(req: NextRequest) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorizedResponse();
+
+  const enterpriseId = await getEnterpriseId(req, user.id);
+  const { question } = await req.json();
 
   if (!question) {
     return NextResponse.json({ error: '问题不能为空' }, { status: 400 });
@@ -11,13 +16,16 @@ export async function POST(request: NextRequest) {
 
   const client = getSupabaseClient();
 
-  // Search for matching knowledge entries
-  const { data: entries, error: searchError } = await client
+  // Search for matching knowledge entries (enterprise-scoped)
+  let searchQuery = client
     .from('knowledge_entries')
     .select('id, question, answer, categories(name)')
     .eq('is_active', true)
     .or(`question.ilike.%${question}%,answer.ilike.%${question}%`)
     .limit(5);
+  searchQuery = enterpriseId ? searchQuery.eq('enterprise_id', enterpriseId) : searchQuery.is('enterprise_id', null);
+
+  const { data: entries, error: searchError } = await searchQuery;
 
   if (searchError) throw new Error(`搜索知识库失败: ${searchError.message}`);
 
@@ -48,7 +56,7 @@ export async function POST(request: NextRequest) {
 7. 如果适合，可以给出2-3个不同角度的回复版本供选择${context ? `\n\n以下是从知识库中匹配到的参考话术：\n${context}` : '\n\n注意：知识库中暂无匹配的参考话术，请根据你的专业知识生成回复。'}`;
 
   // Call LLM with streaming
-  const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
+  const customHeaders = HeaderUtils.extractForwardHeaders(req.headers);
   const config = new Config();
   const llmClient = new LLMClient(config, customHeaders);
 
@@ -77,15 +85,20 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Save to QA history
+        // Save to QA history (enterprise-scoped)
+        const historyInsert: Record<string, unknown> = {
+          question,
+          answer: fullAnswer,
+          matched_entry_id: matchedEntryId,
+          is_ai_generated: true,
+        };
+        if (enterpriseId) {
+          historyInsert.enterprise_id = enterpriseId;
+        }
+
         const { error: historyError } = await client
           .from('qa_history')
-          .insert({
-            question,
-            answer: fullAnswer,
-            matched_entry_id: matchedEntryId,
-            is_ai_generated: true,
-          });
+          .insert(historyInsert);
 
         if (historyError) {
           console.error('保存问答历史失败:', historyError.message);

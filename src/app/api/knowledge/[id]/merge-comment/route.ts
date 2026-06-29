@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getAuthUser, unauthorizedResponse } from '@/lib/auth-helpers';
 
 // POST /api/knowledge/[id]/merge-comment — 将评论内容合并到答案中
 export async function POST(
-  request: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorizedResponse();
+
   const { id } = await params;
   const client = getSupabaseClient();
-  const body = await request.json();
+  const body = await req.json();
   const { comment_id } = body;
 
   if (!comment_id) {

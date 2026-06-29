@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getAuthUser, unauthorizedResponse } from '@/lib/auth-helpers';
 
 export async function GET(
-  _request: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorizedResponse();
+
   const { id } = await params;
   const client = getSupabaseClient();
 

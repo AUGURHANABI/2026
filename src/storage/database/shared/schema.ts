@@ -7,11 +7,45 @@ export const healthCheck = pgTable("health_check", {
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 });
 
+// 企业/组织
+export const enterprises = pgTable(
+	"enterprises",
+	{
+		id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+		name: varchar("name", { length: 100 }).notNull(),
+		invite_code: varchar("invite_code", { length: 8 }).notNull().unique(),
+		owner_id: varchar("owner_id", { length: 36 }).notNull(),
+		created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+		updated_at: timestamp("updated_at", { withTimezone: true }),
+	},
+	(table) => [
+		index("enterprises_invite_code_idx").on(table.invite_code),
+		index("enterprises_owner_id_idx").on(table.owner_id),
+	]
+);
+
+// 企业成员
+export const enterpriseMembers = pgTable(
+	"enterprise_members",
+	{
+		id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+		enterprise_id: varchar("enterprise_id", { length: 36 }).notNull().references(() => enterprises.id, { onDelete: "cascade" }),
+		user_id: varchar("user_id", { length: 36 }).notNull(),
+		role: varchar("role", { length: 20 }).default("member").notNull(), // owner, admin, member
+		joined_at: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
+	},
+	(table) => [
+		index("enterprise_members_enterprise_id_idx").on(table.enterprise_id),
+		index("enterprise_members_user_id_idx").on(table.user_id),
+	]
+);
+
 // 话术分类
 export const categories = pgTable(
 	"categories",
 	{
 		id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+		enterprise_id: varchar("enterprise_id", { length: 36 }).references(() => enterprises.id),
 		name: varchar("name", { length: 100 }).notNull(),
 		description: text("description"),
 		sort_order: integer("sort_order").default(0).notNull(),
@@ -20,6 +54,7 @@ export const categories = pgTable(
 	},
 	(table) => [
 		index("categories_sort_order_idx").on(table.sort_order),
+		index("categories_enterprise_id_idx").on(table.enterprise_id),
 	]
 );
 
@@ -28,12 +63,14 @@ export const tags = pgTable(
 	"tags",
 	{
 		id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-		name: varchar("name", { length: 50 }).notNull().unique(),
+		enterprise_id: varchar("enterprise_id", { length: 36 }).references(() => enterprises.id),
+		name: varchar("name", { length: 50 }).notNull(),
 		color: varchar("color", { length: 20 }).default("#0891b2"),
 		created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	},
 	(table) => [
 		index("tags_name_idx").on(table.name),
+		index("tags_enterprise_id_idx").on(table.enterprise_id),
 	]
 );
 
@@ -42,6 +79,7 @@ export const knowledgeEntries = pgTable(
 	"knowledge_entries",
 	{
 		id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+		enterprise_id: varchar("enterprise_id", { length: 36 }).references(() => enterprises.id),
 		question: text("question").notNull(),
 		answer: text("answer").notNull(),
 		category_id: varchar("category_id", { length: 36 }).references(() => categories.id),
@@ -57,6 +95,7 @@ export const knowledgeEntries = pgTable(
 		index("knowledge_entries_is_active_idx").on(table.is_active),
 		index("knowledge_entries_usage_count_idx").on(table.usage_count),
 		index("knowledge_entries_created_at_idx").on(table.created_at),
+		index("knowledge_entries_enterprise_id_idx").on(table.enterprise_id),
 	]
 );
 
@@ -115,6 +154,7 @@ export const qaHistory = pgTable(
 	"qa_history",
 	{
 		id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+		enterprise_id: varchar("enterprise_id", { length: 36 }).references(() => enterprises.id),
 		question: text("question").notNull(),
 		answer: text("answer").notNull(),
 		matched_entry_id: varchar("matched_entry_id", { length: 36 }).references(() => knowledgeEntries.id),
@@ -126,5 +166,6 @@ export const qaHistory = pgTable(
 		index("qa_history_created_at_idx").on(table.created_at),
 		index("qa_history_matched_entry_id_idx").on(table.matched_entry_id),
 		index("qa_history_is_ai_generated_idx").on(table.is_ai_generated),
+		index("qa_history_enterprise_id_idx").on(table.enterprise_id),
 	]
 );

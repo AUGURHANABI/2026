@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { rateQA, type QARecord } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 
 interface Message {
   id: string;
@@ -17,6 +18,7 @@ interface Message {
 }
 
 export function AIQA() {
+  const { session } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -52,9 +54,10 @@ export function AIQA() {
     ]);
 
     try {
+      const token = session?.access_token ?? '';
       const response = await fetch('/api/qa', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(token ? { 'x-session': token } : {}) },
         body: JSON.stringify({ question: userMessage.content }),
       });
 
@@ -144,7 +147,10 @@ export function AIQA() {
 
   const loadHistory = async () => {
     try {
-      const res = await fetch('/api/statistics?type=qa_history&page_size=10');
+      const token = session?.access_token ?? '';
+      const res = await fetch('/api/statistics?type=qa_history&page_size=10', {
+        headers: token ? { 'x-session': token } : {},
+      });
       const data = await res.json();
       setHistory(data.data ?? []);
       setShowHistory(true);

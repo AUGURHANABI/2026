@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getAuthUser, unauthorizedResponse } from '@/lib/auth-helpers';
 
 // GET /api/knowledge/[id]/comments — 获取条目评论列表
 export async function GET(
-  _request: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorizedResponse();
+
   const { id } = await params;
   const client = getSupabaseClient();
 
@@ -22,12 +26,15 @@ export async function GET(
 
 // POST /api/knowledge/[id]/comments — 添加评论
 export async function POST(
-  request: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorizedResponse();
+
   const { id } = await params;
   const client = getSupabaseClient();
-  const body = await request.json();
+  const body = await req.json();
   const { author, content } = body;
 
   if (!content?.trim()) {
@@ -48,7 +55,7 @@ export async function POST(
     .from('entry_comments')
     .insert({
       entry_id: id,
-      author: author?.trim() || '匿名用户',
+      author: author?.trim() || user.email || '匿名用户',
       content: content.trim(),
     })
     .select()
@@ -61,12 +68,15 @@ export async function POST(
 
 // DELETE /api/knowledge/[id]/comments?comment_id=xxx — 删除评论
 export async function DELETE(
-  request: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorizedResponse();
+
   const { id } = await params;
   const client = getSupabaseClient();
-  const commentId = request.nextUrl.searchParams.get('comment_id');
+  const commentId = req.nextUrl.searchParams.get('comment_id');
 
   if (!commentId) {
     return NextResponse.json({ error: '缺少 comment_id 参数' }, { status: 400 });

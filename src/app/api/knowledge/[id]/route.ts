@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClient } from '@/storage/database/supabase-client';
+import { getAuthUser, unauthorizedResponse } from '@/lib/auth-helpers';
 
 export async function GET(
-  _request: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorizedResponse();
+
   const { id } = await params;
   const client = getSupabaseClient();
 
@@ -27,12 +31,15 @@ export async function GET(
 }
 
 export async function PUT(
-  request: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorizedResponse();
+
   const { id } = await params;
   const client = getSupabaseClient();
-  const body = await request.json();
+  const body = await req.json();
   const { question, answer, category_id, tag_ids, is_active, change_note, effectiveness_score } = body;
 
   // Get current entry to check version
@@ -109,9 +116,12 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorizedResponse();
+
   const { id } = await params;
   const client = getSupabaseClient();
   const { error } = await client.from('knowledge_entries').delete().eq('id', id);

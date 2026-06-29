@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { SupabaseConfigProvider } from '@/lib/supabase-config-inject';
+import { AuthProvider } from '@/lib/auth-context';
 
 export const metadata: Metadata = {
   title: '询盘话术知识库',
@@ -14,7 +16,11 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className="antialiased min-h-screen bg-[#f8fafc]">
-        {children}
+        <SupabaseConfigProvider>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </SupabaseConfigProvider>
       </body>
     </html>
   );

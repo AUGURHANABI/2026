@@ -1,13 +1,45 @@
 const API_BASE = '/api';
 
+/** Get session token from Supabase for authenticated API calls */
+async function getSessionToken(): Promise<string | null> {
+  try {
+    const { getSupabaseBrowserClientWithRetry } = await import('@/lib/supabase-browser');
+    const supabase = await getSupabaseBrowserClientWithRetry();
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Get current enterprise ID from localStorage */
+function getCurrentEnterpriseId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('current_enterprise_id');
+}
+
+/** Fetch wrapper that automatically attaches x-session and x-enterprise-id headers */
+async function authFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = await getSessionToken();
+  const enterpriseId = getCurrentEnterpriseId();
+  const headers = new Headers(options.headers);
+  if (token) {
+    headers.set('x-session', token);
+  }
+  if (enterpriseId) {
+    headers.set('x-enterprise-id', enterpriseId);
+  }
+  return fetch(url, { ...options, headers });
+}
+
 export async function fetchCategories() {
-  const res = await fetch(`${API_BASE}/categories`);
+  const res = await authFetch(`${API_BASE}/categories`);
   if (!res.ok) throw new Error('获取分类失败');
   return res.json();
 }
 
 export async function createCategory(data: { name: string; description?: string; sort_order?: number }) {
-  const res = await fetch(`${API_BASE}/categories`, {
+  const res = await authFetch(`${API_BASE}/categories`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -20,7 +52,7 @@ export async function createCategory(data: { name: string; description?: string;
 }
 
 export async function updateCategory(id: string, data: { name?: string; description?: string; sort_order?: number }) {
-  const res = await fetch(`${API_BASE}/categories/${id}`, {
+  const res = await authFetch(`${API_BASE}/categories/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -33,7 +65,7 @@ export async function updateCategory(id: string, data: { name?: string; descript
 }
 
 export async function deleteCategory(id: string) {
-  const res = await fetch(`${API_BASE}/categories/${id}`, { method: 'DELETE' });
+  const res = await authFetch(`${API_BASE}/categories/${id}`, { method: 'DELETE' });
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.error || '删除分类失败');
@@ -42,13 +74,13 @@ export async function deleteCategory(id: string) {
 }
 
 export async function fetchTags() {
-  const res = await fetch(`${API_BASE}/tags`);
+  const res = await authFetch(`${API_BASE}/tags`);
   if (!res.ok) throw new Error('获取标签失败');
   return res.json();
 }
 
 export async function createTag(data: { name: string; color?: string }) {
-  const res = await fetch(`${API_BASE}/tags`, {
+  const res = await authFetch(`${API_BASE}/tags`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -61,7 +93,7 @@ export async function createTag(data: { name: string; color?: string }) {
 }
 
 export async function updateTag(id: string, data: { name?: string; color?: string }) {
-  const res = await fetch(`${API_BASE}/tags/${id}`, {
+  const res = await authFetch(`${API_BASE}/tags/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -74,7 +106,7 @@ export async function updateTag(id: string, data: { name?: string; color?: strin
 }
 
 export async function deleteTag(id: string) {
-  const res = await fetch(`${API_BASE}/tags/${id}`, { method: 'DELETE' });
+  const res = await authFetch(`${API_BASE}/tags/${id}`, { method: 'DELETE' });
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.error || '删除标签失败');
@@ -98,13 +130,13 @@ export async function fetchKnowledge(params?: {
       }
     });
   }
-  const res = await fetch(`${API_BASE}/knowledge?${searchParams.toString()}`);
+  const res = await authFetch(`${API_BASE}/knowledge?${searchParams.toString()}`);
   if (!res.ok) throw new Error('获取知识库失败');
   return res.json();
 }
 
 export async function fetchKnowledgeById(id: string) {
-  const res = await fetch(`${API_BASE}/knowledge/${id}`);
+  const res = await authFetch(`${API_BASE}/knowledge/${id}`);
   if (!res.ok) throw new Error('获取条目详情失败');
   return res.json();
 }
@@ -115,7 +147,7 @@ export async function createKnowledge(data: {
   category_id?: string;
   tag_ids?: string[];
 }) {
-  const res = await fetch(`${API_BASE}/knowledge`, {
+  const res = await authFetch(`${API_BASE}/knowledge`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -136,7 +168,7 @@ export async function updateKnowledge(id: string, data: {
   change_note?: string;
   effectiveness_score?: number;
 }) {
-  const res = await fetch(`${API_BASE}/knowledge/${id}`, {
+  const res = await authFetch(`${API_BASE}/knowledge/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -149,7 +181,7 @@ export async function updateKnowledge(id: string, data: {
 }
 
 export async function deleteKnowledge(id: string) {
-  const res = await fetch(`${API_BASE}/knowledge/${id}`, { method: 'DELETE' });
+  const res = await authFetch(`${API_BASE}/knowledge/${id}`, { method: 'DELETE' });
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.error || '删除条目失败');
@@ -158,13 +190,13 @@ export async function deleteKnowledge(id: string) {
 }
 
 export async function fetchEntryVersions(id: string) {
-  const res = await fetch(`${API_BASE}/knowledge/${id}/versions`);
+  const res = await authFetch(`${API_BASE}/knowledge/${id}/versions`);
   if (!res.ok) throw new Error('获取版本历史失败');
   return res.json();
 }
 
 export async function rateQA(id: string, effectiveness_rating: number) {
-  const res = await fetch(`${API_BASE}/qa/${id}`, {
+  const res = await authFetch(`${API_BASE}/qa/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ effectiveness_rating }),
@@ -174,7 +206,7 @@ export async function rateQA(id: string, effectiveness_rating: number) {
 }
 
 export async function fetchStatistics(type: string = 'overview') {
-  const res = await fetch(`${API_BASE}/statistics?type=${type}`);
+  const res = await authFetch(`${API_BASE}/statistics?type=${type}`);
   if (!res.ok) throw new Error('获取统计数据失败');
   return res.json();
 }
@@ -253,7 +285,7 @@ export async function importWord(data: {
     formData.append('tag_ids', data.tag_ids.join(','));
   }
 
-  const res = await fetch(`${API_BASE}/knowledge/import`, {
+  const res = await authFetch(`${API_BASE}/knowledge/import`, {
     method: 'POST',
     body: formData,
   });
@@ -267,13 +299,13 @@ export async function importWord(data: {
 // ===== 评论功能 =====
 
 export async function fetchEntryComments(entryId: string) {
-  const res = await fetch(`${API_BASE}/knowledge/${entryId}/comments`);
+  const res = await authFetch(`${API_BASE}/knowledge/${entryId}/comments`);
   if (!res.ok) throw new Error('获取评论失败');
   return res.json();
 }
 
 export async function addEntryComment(entryId: string, data: { author?: string; content: string }) {
-  const res = await fetch(`${API_BASE}/knowledge/${entryId}/comments`, {
+  const res = await authFetch(`${API_BASE}/knowledge/${entryId}/comments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -286,7 +318,7 @@ export async function addEntryComment(entryId: string, data: { author?: string; 
 }
 
 export async function deleteEntryComment(entryId: string, commentId: string) {
-  const res = await fetch(`${API_BASE}/knowledge/${entryId}/comments?comment_id=${commentId}`, {
+  const res = await authFetch(`${API_BASE}/knowledge/${entryId}/comments?comment_id=${commentId}`, {
     method: 'DELETE',
   });
   if (!res.ok) {
@@ -297,7 +329,7 @@ export async function deleteEntryComment(entryId: string, commentId: string) {
 }
 
 export async function rateEntry(entryId: string, effectiveness_score: number) {
-  const res = await fetch(`${API_BASE}/knowledge/${entryId}/rate`, {
+  const res = await authFetch(`${API_BASE}/knowledge/${entryId}/rate`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ effectiveness_score }),
@@ -310,7 +342,7 @@ export async function rateEntry(entryId: string, effectiveness_score: number) {
 }
 
 export async function mergeCommentToAnswer(entryId: string, commentId: string) {
-  const res = await fetch(`${API_BASE}/knowledge/${entryId}/merge-comment`, {
+  const res = await authFetch(`${API_BASE}/knowledge/${entryId}/merge-comment`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ comment_id: commentId }),
@@ -323,7 +355,7 @@ export async function mergeCommentToAnswer(entryId: string, commentId: string) {
 }
 
 export async function recordUsage(entryId: string): Promise<{ data: { id: string; usage_count: number; counted: boolean } }> {
-  const res = await fetch(`${API_BASE}/knowledge/${entryId}/use`, { method: 'PUT' });
+  const res = await authFetch(`${API_BASE}/knowledge/${entryId}/use`, { method: 'PUT' });
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.error || '记录使用失败');
@@ -332,7 +364,7 @@ export async function recordUsage(entryId: string): Promise<{ data: { id: string
 }
 
 export async function downloadTemplate() {
-  const res = await fetch(`${API_BASE}/knowledge/template`);
+  const res = await authFetch(`${API_BASE}/knowledge/template`);
   if (!res.ok) throw new Error('下载模板失败');
   const blob = await res.blob();
   const url = window.URL.createObjectURL(blob);

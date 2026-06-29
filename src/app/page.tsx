@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
 import { Sidebar } from '@/components/knowledge-base/sidebar';
 import { KnowledgeList } from '@/components/knowledge-base/knowledge-list';
 import { AIQA } from '@/components/knowledge-base/ai-qa';
@@ -12,6 +14,26 @@ type ActiveTab = 'knowledge' | 'qa' | 'categories' | 'tags' | 'statistics';
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('knowledge');
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.replace('/login');
+    }
+  }, [user, isLoading, router]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
+        <div className="text-slate-400">加载中...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="flex min-h-screen">
