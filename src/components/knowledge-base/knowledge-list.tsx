@@ -195,6 +195,29 @@ export function KnowledgeList() {
     }
   };
 
+  // 用户选中文字后 Ctrl+C / 右键复制时触发，只记使用次数（不重复写剪贴板）
+  const handleTextCopy = (entry: KnowledgeEntry) => {
+    const now = Date.now();
+    const lastCopy = recentCopyRef.current.get(entry.id);
+    if (!lastCopy || now - lastCopy >= 30_000) {
+      recentCopyRef.current.set(entry.id, now);
+      recordUsage(entry.id).then((res) => {
+        if (res.data.counted) {
+          setEntries((prev) =>
+            prev.map((e) =>
+              e.id === entry.id ? { ...e, usage_count: res.data.usage_count } : e
+            )
+          );
+          if (selectedEntry?.id === entry.id) {
+            setSelectedEntry((prev) =>
+              prev ? { ...prev, usage_count: res.data.usage_count } : prev
+            );
+          }
+        }
+      }).catch(() => {/* 静默失败 */});
+    }
+  };
+
   const handleToggleActive = async (entry: KnowledgeEntry) => {
     try {
       await updateKnowledge(entry.id, { is_active: !entry.is_active });
@@ -488,7 +511,7 @@ export function KnowledgeList() {
                         <Badge variant="secondary" className="text-xs">已停用</Badge>
                       )}
                     </div>
-                    <div className="relative group/answer">
+                    <div className="relative group/answer" onCopy={() => handleTextCopy(entry)}>
                       <p className="text-sm text-slate-500 line-clamp-2 pr-8">
                         {entry.answer}
                       </p>
@@ -778,7 +801,7 @@ export function KnowledgeList() {
                     )}
                   </Button>
                 </div>
-                <div className="mt-1 p-3 bg-slate-50 rounded-lg text-slate-700 whitespace-pre-wrap text-sm leading-relaxed max-h-[300px] overflow-y-auto">
+                <div className="mt-1 p-3 bg-slate-50 rounded-lg text-slate-700 whitespace-pre-wrap text-sm leading-relaxed max-h-[300px] overflow-y-auto" onCopy={() => handleTextCopy(selectedEntry)}>
                   {selectedEntry.answer}
                 </div>
               </div>
