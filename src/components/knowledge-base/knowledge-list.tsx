@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { useRef } from 'react';
 import {
   fetchKnowledge,
   fetchCategories,
@@ -18,6 +19,7 @@ import {
   updateKnowledge,
   deleteKnowledge,
   fetchEntryVersions,
+  importWord,
   type KnowledgeEntry,
   type Category,
   type Tag,
@@ -49,6 +51,19 @@ export function KnowledgeList() {
   const [formCategory, setFormCategory] = useState('');
   const [formTags, setFormTags] = useState<string[]>([]);
   const [formChangeNote, setFormChangeNote] = useState('');
+
+  // Import states
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importCategory, setImportCategory] = useState('');
+  const [importTags, setImportTags] = useState<string[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    total_parsed: number;
+    imported: number;
+    entries: Array<{ id: string; question: string }>;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -173,6 +188,41 @@ export function KnowledgeList() {
     );
   };
 
+  const toggleImportTag = (tagId: string) => {
+    setImportTags((prev) =>
+      prev.includes(tagId) ? prev.filter((t) => t !== tagId) : [...prev, tagId]
+    );
+  };
+
+  const handleImport = async () => {
+    if (!importFile) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const res = await importWord({
+        file: importFile,
+        category_id: importCategory || undefined,
+        tag_ids: importTags,
+      });
+      setImportResult(res.data);
+      loadData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '导入失败');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const resetImportForm = () => {
+    setImportFile(null);
+    setImportCategory('');
+    setImportTags([]);
+    setImportResult(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const totalPages = Math.ceil(total / 20);
 
   return (
@@ -182,15 +232,30 @@ export function KnowledgeList() {
           <h2 className="text-2xl font-bold text-slate-800">知识库管理</h2>
           <p className="text-sm text-slate-500 mt-1">管理和检索询盘话术，共 {total} 条</p>
         </div>
-        <Button
-          onClick={() => {
-            resetForm();
-            setShowCreate(true);
-          }}
-          className="bg-cyan-600 hover:bg-cyan-700"
-        >
-          + 新增话术
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              resetImportForm();
+              setShowImport(true);
+            }}
+            className="border-cyan-600 text-cyan-600 hover:bg-cyan-50"
+          >
+            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            导入 Word
+          </Button>
+          <Button
+            onClick={() => {
+              resetForm();
+              setShowCreate(true);
+            }}
+            className="bg-cyan-600 hover:bg-cyan-700"
+          >
+            + 新增话术
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -624,6 +689,144 @@ export function KnowledgeList() {
               ))
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Word Dialog */}
+      <Dialog open={showImport} onOpenChange={(open) => { setShowImport(open); if (!open) resetImportForm(); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>从 Word 文档导入话术</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Format guide */}
+            <div className="bg-slate-50 rounded-lg p-4 text-sm text-slate-600 space-y-2">
+              <p className="font-medium text-slate-700">支持的文档格式：</p>
+              <div className="space-y-1.5">
+                <p>1. <span className="font-mono text-xs bg-white px-1 rounded">问题：xxx / 答案：xxx</span> 标记格式</p>
+                <p>2. 编号列表格式（1. 问题，后跟答案，空行分隔）</p>
+                <p>3. 两列表格（第一列问题，第二列答案）</p>
+              </div>
+              <p className="text-xs text-slate-400">仅支持 .docx 格式</p>
+            </div>
+
+            {/* File input */}
+            <div>
+              <Label>选择文件 *</Label>
+              <div className="mt-1">
+                <label
+                  htmlFor="word-import"
+                  className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+                    importFile ? 'border-cyan-500 bg-cyan-50' : 'border-slate-300 bg-white hover:bg-slate-50'
+                  }`}
+                >
+                  {importFile ? (
+                    <div className="text-center">
+                      <svg className="w-8 h-8 mx-auto mb-2 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p className="text-sm font-medium text-cyan-700">{importFile.name}</p>
+                      <p className="text-xs text-slate-400 mt-1">{(importFile.size / 1024).toFixed(1)} KB</p>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <svg className="w-8 h-8 mx-auto mb-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      <p className="text-sm text-slate-500">点击上传 Word 文件</p>
+                      <p className="text-xs text-slate-400 mt-1">支持 .docx 格式</p>
+                    </div>
+                  )}
+                  <input
+                    id="word-import"
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".docx"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      setImportFile(file ?? null);
+                      setImportResult(null);
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Category for imported entries */}
+            <div>
+              <Label>统一分类（可选）</Label>
+              <Select value={importCategory} onValueChange={setImportCategory}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="为导入的话术选择分类" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">不指定分类</SelectItem>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Tags for imported entries */}
+            <div>
+              <Label>统一标签（可选）</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {tags.map((tag) => (
+                  <Badge
+                    key={tag.id}
+                    className={`cursor-pointer transition-opacity ${
+                      importTags.includes(tag.id) ? 'opacity-100' : 'opacity-40'
+                    }`}
+                    style={{ backgroundColor: tag.color, color: 'white' }}
+                    onClick={() => toggleImportTag(tag.id)}
+                  >
+                    {tag.name}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            {/* Import result */}
+            {importResult && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                <p className="font-medium text-emerald-800 mb-2">导入完成</p>
+                <p className="text-sm text-emerald-700">
+                  从文档中解析出 <span className="font-semibold">{importResult.total_parsed}</span> 组问答，
+                  成功导入 <span className="font-semibold">{importResult.imported}</span> 条话术
+                </p>
+                {importResult.entries.length > 0 && (
+                  <div className="mt-3 space-y-1">
+                    {importResult.entries.map((entry, i) => (
+                      <p key={entry.id} className="text-xs text-emerald-600 truncate">
+                        {i + 1}. {entry.question}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowImport(false)}
+            >
+              {importResult ? '关闭' : '取消'}
+            </Button>
+            {!importResult && (
+              <Button
+                className="bg-cyan-600 hover:bg-cyan-700"
+                onClick={handleImport}
+                disabled={!importFile || importing}
+              >
+                {importing ? '正在导入...' : '开始导入'}
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -229,3 +229,28 @@ export interface EntryVersion {
   change_note: string | null;
   created_at: string;
 }
+
+export async function importWord(data: {
+  file: File;
+  category_id?: string;
+  tag_ids?: string[];
+}) {
+  const formData = new FormData();
+  formData.append('file', data.file);
+  if (data.category_id) {
+    formData.append('category_id', data.category_id);
+  }
+  if (data.tag_ids && data.tag_ids.length > 0) {
+    formData.append('tag_ids', data.tag_ids.join(','));
+  }
+
+  const res = await fetch(`${API_BASE}/knowledge/import`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '导入失败');
+  }
+  return res.json();
+}
