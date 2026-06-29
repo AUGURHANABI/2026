@@ -39,11 +39,13 @@ export async function POST(request: NextRequest) {
   const systemPrompt = `你是一位专业的询盘话术顾问。你的任务是根据用户的问题，生成精准且专业的询盘回复话术。
 
 要求：
-1. 回复必须专业、礼貌、有说服力
+1. 回复必须专业、礼貌、有说服力，使用中文
 2. 针对客户的具体问题给出有针对性的回复
 3. 如果有参考话术，请结合参考话术进行优化，但不要照搬
 4. 回复应包含：问候/确认、核心回复、引导下一步行动
-5. 语言简洁有力，避免冗长${context ? `\n\n以下是从知识库中匹配到的参考话术：\n${context}` : '\n\n注意：知识库中暂无匹配的参考话术，请根据你的专业知识生成回复。'}`;
+5. 语言简洁有力，避免冗长
+6. 不要使用"Dear"等英文称呼，直接用中文问候语
+7. 如果适合，可以给出2-3个不同角度的回复版本供选择${context ? `\n\n以下是从知识库中匹配到的参考话术：\n${context}` : '\n\n注意：知识库中暂无匹配的参考话术，请根据你的专业知识生成回复。'}`;
 
   // Call LLM with streaming
   const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
