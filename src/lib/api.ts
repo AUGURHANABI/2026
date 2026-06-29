@@ -322,6 +322,15 @@ export async function mergeCommentToAnswer(entryId: string, commentId: string) {
   return res.json();
 }
 
+export async function recordUsage(entryId: string): Promise<{ data: { id: string; usage_count: number; counted: boolean } }> {
+  const res = await fetch(`${API_BASE}/knowledge/${entryId}/use`, { method: 'PUT' });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '记录使用失败');
+  }
+  return res.json();
+}
+
 export async function downloadTemplate() {
   const res = await fetch(`${API_BASE}/knowledge/template`);
   if (!res.ok) throw new Error('下载模板失败');

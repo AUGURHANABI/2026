@@ -26,6 +26,7 @@ import {
   deleteEntryComment,
   rateEntry,
   mergeCommentToAnswer,
+  recordUsage,
   type KnowledgeEntry,
   type Category,
   type Tag,
@@ -74,6 +75,10 @@ export function KnowledgeList() {
     entries: Array<{ id: string; question: string; answers_count?: number; action: 'created' | 'updated' | 'skipped' }>;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Copy states — 30秒内同一条目防重复
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const recentCopyRef = useRef<Map<string, number>>(new Map());
 
   // Comment & Rating states
   const [comments, setComments] = useState<EntryComment[]>([]);
@@ -153,6 +158,40 @@ export function KnowledgeList() {
       loadData();
     } catch (err) {
       alert(err instanceof Error ? err.message : '删除失败');
+    }
+  };
+
+  // 复制话术并记录使用次数（30秒防重复）
+  const handleCopyAnswer = async (entry: KnowledgeEntry, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(entry.answer);
+      setCopiedId(entry.id);
+      setTimeout(() => setCopiedId(null), 2000);
+
+      // 30秒内同一条目不重复计数
+      const now = Date.now();
+      const lastCopy = recentCopyRef.current.get(entry.id);
+      if (!lastCopy || now - lastCopy >= 30_000) {
+        recentCopyRef.current.set(entry.id, now);
+        recordUsage(entry.id).then((res) => {
+          if (res.data.counted) {
+            // 更新本地 usage_count
+            setEntries((prev) =>
+              prev.map((e) =>
+                e.id === entry.id ? { ...e, usage_count: res.data.usage_count } : e
+              )
+            );
+            if (selectedEntry?.id === entry.id) {
+              setSelectedEntry((prev) =>
+                prev ? { ...prev, usage_count: res.data.usage_count } : prev
+              );
+            }
+          }
+        }).catch(() => {/* 静默失败，不影响复制体验 */});
+      }
+    } catch {
+      // clipboard API 不可用时静默失败
     }
   };
 
@@ -449,9 +488,22 @@ export function KnowledgeList() {
                         <Badge variant="secondary" className="text-xs">已停用</Badge>
                       )}
                     </div>
-                    <p className="text-sm text-slate-500 line-clamp-2">
-                      {entry.answer}
-                    </p>
+                    <div className="relative group/answer">
+                      <p className="text-sm text-slate-500 line-clamp-2 pr-8">
+                        {entry.answer}
+                      </p>
+                      <button
+                        onClick={(e) => handleCopyAnswer(entry, e)}
+                        className="absolute top-0 right-0 opacity-0 group-hover/answer:opacity-100 transition-opacity p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-cyan-600"
+                        title="复制话术"
+                      >
+                        {copiedId === entry.id ? (
+                          <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                        )}
+                      </button>
+                    </div>
                     <div className="flex items-center gap-2 mt-3 flex-wrap">
                       {entry.categories && (
                         <Badge variant="outline" className="text-xs">
@@ -705,7 +757,27 @@ export function KnowledgeList() {
 
               {/* Answer */}
               <div>
-                <Label className="text-slate-500">回复话术</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-slate-500">回复话术</Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1"
+                    onClick={() => handleCopyAnswer(selectedEntry)}
+                  >
+                    {copiedId === selectedEntry.id ? (
+                      <>
+                        <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        已复制
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                        复制话术
+                      </>
+                    )}
+                  </Button>
+                </div>
                 <div className="mt-1 p-3 bg-slate-50 rounded-lg text-slate-700 whitespace-pre-wrap text-sm leading-relaxed max-h-[300px] overflow-y-auto">
                   {selectedEntry.answer}
                 </div>
