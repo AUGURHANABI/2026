@@ -36,6 +36,7 @@ import {
 
 export function KnowledgeList() {
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
+  const [expandedQuestion, setExpandedQuestion] = useState<string>('');
 
   // Group entries by question for display
   const groupedEntries = useMemo(() => {
@@ -506,109 +507,106 @@ export function KnowledgeList() {
           <p className="text-sm mt-2">点击"新增话术"添加第一条询盘话术</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {groupedEntries.map((group) => (
-            <div key={group.question}>
-              {/* Question group header - only show if multiple answers */}
-              {group.entries.length > 1 && (
-                <div className="mb-1.5 px-1">
-                  <span className="text-sm font-semibold text-slate-700">{group.question}</span>
-                  <span className="ml-2 text-xs text-slate-400">{group.entries.length} 个回答</span>
-                </div>
-              )}
-              <div className={group.entries.length > 1 ? 'space-y-2 ml-2 pl-3 border-l-2 border-cyan-200' : ''}>
-                {group.entries.map((entry) => (
-                  <Card
-                    key={entry.id}
-                    className={`bg-white hover:shadow-md transition-shadow cursor-pointer border-l-4 isolate ${
-                      entry.is_active ? 'border-l-cyan-500' : 'border-l-slate-300'
-                    }`}
-                    onClick={() => openDetail(entry)}
+            <div key={group.question} className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+              {/* Question header - clickable to expand/collapse */}
+              <button
+                className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors text-left"
+                onClick={() => setExpandedQuestion(expandedQuestion === group.question ? '' : group.question)}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <svg
+                    className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${expandedQuestion === group.question ? 'rotate-90' : ''}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
                   >
-                    <CardContent className="p-5">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          {/* Show question in card only if single answer, or as part of multi-answer card */}
-                          {group.entries.length <= 1 && (
-                            <div className="flex items-center gap-2 mb-2 flex-wrap">
-                              <h3 className="font-semibold text-slate-800 truncate">
-                                {entry.question}
-                              </h3>
-                              {!entry.is_active && (
-                                <Badge variant="secondary" className="text-xs">已停用</Badge>
-                              )}
-                            </div>
-                          )}
-                          {group.entries.length > 1 && !entry.is_active && (
-                            <Badge variant="secondary" className="text-xs mb-2">已停用</Badge>
-                          )}
-                          <div className="relative group/answer isolate" onCopy={() => handleTextCopy(entry)}>
-                            <p className="text-sm text-slate-500 line-clamp-2 pr-8 overflow-hidden">
-                              {entry.answer}
-                            </p>
-                            <button
-                              onClick={(e) => handleCopyAnswer(entry, e)}
-                              className="absolute top-0 right-0 opacity-0 group-hover/answer:opacity-100 transition-opacity p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-cyan-600"
-                              title="复制话术"
-                            >
-                              {copiedId === entry.id ? (
-                                <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                              ) : (
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                              )}
-                            </button>
-                          </div>
-                          <div className="flex items-center gap-2 mt-3 flex-wrap">
-                            {entry.categories && (
-                              <Badge variant="outline" className="text-xs">
-                                {entry.categories.name}
-                              </Badge>
-                            )}
-                            {entry.tags?.map((tag) => (
-                              <Badge
-                                key={tag.id}
-                                className="text-xs text-white"
-                                style={{ backgroundColor: tag.color }}
-                              >
-                                {tag.name}
-                              </Badge>
-                            ))}
-                            <span className="text-xs text-slate-400 ml-2">
-                              使用 {entry.usage_count} 次 · 评分 {entry.effectiveness_score}/5
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openEdit(entry)}
-                          >
-                            编辑
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openVersions(entry)}
-                          >
-                            v{entry.current_version}
-                          </Button>
-                          <Switch
-                            checked={entry.is_active}
-                            onCheckedChange={() => handleToggleActive(entry)}
-                          />
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-500 hover:text-red-700"
-                            onClick={() => handleDelete(entry.id)}
-                          >
-                            删除
-                          </Button>
-                        </div>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                  <h3 className="font-semibold text-slate-800 truncate">{group.question}</h3>
+                  {!group.entries[0].is_active && group.entries.length === 1 && (
+                    <Badge variant="secondary" className="text-xs shrink-0">已停用</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 shrink-0 ml-4">
+                  {group.entries.length > 1 && (
+                    <span className="text-xs text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded-full">
+                      {group.entries.length} 个回答
+                    </span>
+                  )}
+                  {group.entries.length === 1 && (
+                    <span className="text-xs text-slate-400">
+                      使用 {group.entries[0].usage_count} 次
+                    </span>
+                  )}
+                </div>
+              </button>
+
+              {/* Answer cards - shown when expanded or single answer */}
+              <div className={`border-t border-slate-100 ${expandedQuestion === group.question || group.entries.length === 1 ? '' : 'hidden'}`}>
+                {group.entries.map((entry, idx) => (
+                  <div
+                    key={entry.id}
+                    className={`px-5 py-4 ${idx > 0 ? 'border-t border-slate-100' : ''}`}
+                  >
+                    {group.entries.length > 1 && (
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded">
+                          答案 {idx + 1}
+                        </span>
+                        {!entry.is_active && (
+                          <Badge variant="secondary" className="text-xs">已停用</Badge>
+                        )}
                       </div>
-                    </CardContent>
-                  </Card>
+                    )}
+                    <div className="relative group/answer isolate" onCopy={() => handleTextCopy(entry)}>
+                      <p className="text-sm text-slate-600 whitespace-pre-wrap pr-10 cursor-pointer hover:text-slate-800"
+                         onClick={() => openDetail(entry)}
+                      >
+                        {entry.answer}
+                      </p>
+                      <button
+                        onClick={(e) => handleCopyAnswer(entry, e)}
+                        className="absolute top-0 right-0 opacity-0 group-hover/answer:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-cyan-50 text-slate-400 hover:text-cyan-600"
+                        title="复制话术"
+                      >
+                        {copiedId === entry.id ? (
+                          <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                        )}
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between mt-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {entry.categories && (
+                          <Badge variant="outline" className="text-xs">
+                            {entry.categories.name}
+                          </Badge>
+                        )}
+                        {entry.tags?.map((tag) => (
+                          <Badge
+                            key={tag.id}
+                            className="text-xs text-white"
+                            style={{ backgroundColor: tag.color }}
+                          >
+                            {tag.name}
+                          </Badge>
+                        ))}
+                        <span className="text-xs text-slate-400">
+                          使用 {entry.usage_count} 次 · 评分 {entry.effectiveness_score}/5
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(entry)}>编辑</Button>
+                        <Button variant="ghost" size="sm" onClick={() => openVersions(entry)}>v{entry.current_version}</Button>
+                        <Switch
+                          checked={entry.is_active}
+                          onCheckedChange={() => handleToggleActive(entry)}
+                        />
+                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700" onClick={() => handleDelete(entry.id)}>删除</Button>
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
