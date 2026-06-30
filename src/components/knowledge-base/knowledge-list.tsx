@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -36,6 +36,21 @@ import {
 
 export function KnowledgeList() {
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
+
+  // Group entries by question for display
+  const groupedEntries = useMemo(() => {
+    const groups: Array<{ question: string; entries: KnowledgeEntry[] }> = [];
+    const map = new Map<string, KnowledgeEntry[]>();
+    for (const entry of entries) {
+      const key = entry.question.trim().toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, []);
+        groups.push({ question: entry.question, entries: map.get(key)! });
+      }
+      map.get(key)!.push(entry);
+    }
+    return groups;
+  }, [entries]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [total, setTotal] = useState(0);
@@ -492,105 +507,111 @@ export function KnowledgeList() {
         </div>
       ) : (
         <div className="space-y-3">
-          {entries.map((entry) => (
-            <Card
-              key={entry.id}
-              className={`bg-white hover:shadow-md transition-shadow cursor-pointer border-l-4 isolate ${
-                entry.is_active ? 'border-l-cyan-500' : 'border-l-slate-300'
-              }`}
-              onClick={() => openDetail(entry)}
-            >
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2 flex-wrap">
-                      <h3 className="font-semibold text-slate-800 truncate">
-                        {entry.question}
-                      </h3>
-                      {!entry.is_active && (
-                        <Badge variant="secondary" className="text-xs">已停用</Badge>
-                      )}
-                    </div>
-                    <div className="relative group/answer isolate" onCopy={() => handleTextCopy(entry)}>
-                      {entry.answers && entry.answers.length > 1 ? (
-                        <div className="space-y-1.5 pr-8 overflow-hidden">
-                          {entry.answers.map((ans: { id: string; answer: string }, idx: number) => (
-                            <p key={ans.id} className="text-sm text-slate-500 line-clamp-2 overflow-hidden">
-                              <span className="inline-block bg-cyan-50 text-cyan-700 text-xs font-medium px-1.5 py-0.5 rounded mr-1.5">
-                                答案{idx + 1}
-                              </span>
-                              {ans.answer}
-                            </p>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-sm text-slate-500 line-clamp-2 pr-8 overflow-hidden">
-                          {entry.answer}
-                        </p>
-                      )}
-                      <button
-                        onClick={(e) => handleCopyAnswer(entry, e)}
-                        className="absolute top-0 right-0 opacity-0 group-hover/answer:opacity-100 transition-opacity p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-cyan-600"
-                        title="复制话术"
-                      >
-                        {copiedId === entry.id ? (
-                          <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                        )}
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2 mt-3 flex-wrap">
-                      {entry.categories && (
-                        <Badge variant="outline" className="text-xs">
-                          {entry.categories.name}
-                        </Badge>
-                      )}
-                      {entry.tags?.map((tag) => (
-                        <Badge
-                          key={tag.id}
-                          className="text-xs text-white"
-                          style={{ backgroundColor: tag.color }}
-                        >
-                          {tag.name}
-                        </Badge>
-                      ))}
-                      <span className="text-xs text-slate-400 ml-2">
-                        使用 {entry.usage_count} 次 · 评分 {entry.effectiveness_score}/5
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openEdit(entry)}
-                    >
-                      编辑
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openVersions(entry)}
-                    >
-                      v{entry.current_version}
-                    </Button>
-                    <Switch
-                      checked={entry.is_active}
-                      onCheckedChange={() => handleToggleActive(entry)}
-                    />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-500 hover:text-red-700"
-                      onClick={() => handleDelete(entry.id)}
-                    >
-                      删除
-                    </Button>
-                  </div>
+          {groupedEntries.map((group) => (
+            <div key={group.question}>
+              {/* Question group header - only show if multiple answers */}
+              {group.entries.length > 1 && (
+                <div className="mb-1.5 px-1">
+                  <span className="text-sm font-semibold text-slate-700">{group.question}</span>
+                  <span className="ml-2 text-xs text-slate-400">{group.entries.length} 个回答</span>
                 </div>
-              </CardContent>
-            </Card>
+              )}
+              <div className={group.entries.length > 1 ? 'space-y-2 ml-2 pl-3 border-l-2 border-cyan-200' : ''}>
+                {group.entries.map((entry) => (
+                  <Card
+                    key={entry.id}
+                    className={`bg-white hover:shadow-md transition-shadow cursor-pointer border-l-4 isolate ${
+                      entry.is_active ? 'border-l-cyan-500' : 'border-l-slate-300'
+                    }`}
+                    onClick={() => openDetail(entry)}
+                  >
+                    <CardContent className="p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          {/* Show question in card only if single answer, or as part of multi-answer card */}
+                          {group.entries.length <= 1 && (
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                              <h3 className="font-semibold text-slate-800 truncate">
+                                {entry.question}
+                              </h3>
+                              {!entry.is_active && (
+                                <Badge variant="secondary" className="text-xs">已停用</Badge>
+                              )}
+                            </div>
+                          )}
+                          {group.entries.length > 1 && !entry.is_active && (
+                            <Badge variant="secondary" className="text-xs mb-2">已停用</Badge>
+                          )}
+                          <div className="relative group/answer isolate" onCopy={() => handleTextCopy(entry)}>
+                            <p className="text-sm text-slate-500 line-clamp-2 pr-8 overflow-hidden">
+                              {entry.answer}
+                            </p>
+                            <button
+                              onClick={(e) => handleCopyAnswer(entry, e)}
+                              className="absolute top-0 right-0 opacity-0 group-hover/answer:opacity-100 transition-opacity p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-cyan-600"
+                              title="复制话术"
+                            >
+                              {copiedId === entry.id ? (
+                                <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                              )}
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-2 mt-3 flex-wrap">
+                            {entry.categories && (
+                              <Badge variant="outline" className="text-xs">
+                                {entry.categories.name}
+                              </Badge>
+                            )}
+                            {entry.tags?.map((tag) => (
+                              <Badge
+                                key={tag.id}
+                                className="text-xs text-white"
+                                style={{ backgroundColor: tag.color }}
+                              >
+                                {tag.name}
+                              </Badge>
+                            ))}
+                            <span className="text-xs text-slate-400 ml-2">
+                              使用 {entry.usage_count} 次 · 评分 {entry.effectiveness_score}/5
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEdit(entry)}
+                          >
+                            编辑
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openVersions(entry)}
+                          >
+                            v{entry.current_version}
+                          </Button>
+                          <Switch
+                            checked={entry.is_active}
+                            onCheckedChange={() => handleToggleActive(entry)}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-500 hover:text-red-700"
+                            onClick={() => handleDelete(entry.id)}
+                          >
+                            删除
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -815,22 +836,9 @@ export function KnowledgeList() {
                   </Button>
                 </div>
                 <div className="mt-1 isolate">
-                  {selectedEntry.answers && selectedEntry.answers.length > 1 ? (
-                    <div className="space-y-3">
-                      {selectedEntry.answers.map((ans: { id: string; answer: string }, idx: number) => (
-                        <div key={ans.id} className="p-3 bg-slate-50 rounded-lg text-slate-700 whitespace-pre-wrap text-sm leading-relaxed max-h-[200px] overflow-y-auto overflow-hidden" onCopy={() => handleTextCopy(selectedEntry)}>
-                          <span className="inline-block bg-cyan-100 text-cyan-700 text-xs font-semibold px-2 py-0.5 rounded mb-2">
-                            答案 {idx + 1}
-                          </span>
-                          <div>{ans.answer}</div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-slate-50 rounded-lg text-slate-700 whitespace-pre-wrap text-sm leading-relaxed max-h-[300px] overflow-y-auto overflow-hidden" onCopy={() => handleTextCopy(selectedEntry)}>
-                      {selectedEntry.answer}
-                    </div>
-                  )}
+                  <div className="p-3 bg-slate-50 rounded-lg text-slate-700 whitespace-pre-wrap text-sm leading-relaxed max-h-[300px] overflow-y-auto overflow-hidden" onCopy={() => handleTextCopy(selectedEntry)}>
+                    {selectedEntry.answer}
+                  </div>
                 </div>
               </div>
 

@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
   if (error) throw new Error(`查询知识库失败: ${error.message}`);
 
   // Transform the nested tag data
-  const transformed: Array<Record<string, unknown>> = (data ?? []).map((entry: Record<string, unknown>) => {
+  const transformed = (data ?? []).map((entry: Record<string, unknown>) => {
     const tags = ((entry.knowledge_entry_tags as Array<Record<string, unknown>>) ?? []).map(
       (et: Record<string, unknown>) => et.tags as Record<string, unknown>
     ).filter(Boolean);
@@ -67,29 +67,16 @@ export async function GET(req: NextRequest) {
     return { ...rest, tags };
   });
 
-  // Group entries by question — merge same-question entries into one with multiple answers
-  const grouped = new Map<string, Record<string, unknown>>();
-  for (const entry of transformed) {
-    const key = String(entry.question).trim().toLowerCase();
-    if (grouped.has(key)) {
-      const existing = grouped.get(key)!;
-      const existingAnswers = (existing.answers as Array<{ id: string; answer: string }>) ?? [];
-      existingAnswers.push({ id: String(entry.id), answer: String(entry.answer) });
-      existing.answers = existingAnswers;
-      // Keep the most recent entry's metadata
-      existing.usage_count = Number(entry.usage_count) + Number(existing.usage_count);
-      existing.effectiveness_score = entry.effectiveness_score ?? existing.effectiveness_score;
-    } else {
-      grouped.set(key, {
-        ...entry,
-        answers: [{ id: String(entry.id), answer: String(entry.answer) }],
-      });
-    }
-  }
+  // Sort by question so same-question entries are adjacent
+  transformed.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+    const qa = String(a.question).trim().toLowerCase();
+    const qb = String(b.question).trim().toLowerCase();
+    if (qa < qb) return -1;
+    if (qa > qb) return 1;
+    return 0;
+  });
 
-  const result = Array.from(grouped.values());
-
-  return NextResponse.json({ data: result, total: count, page, page_size: pageSize });
+  return NextResponse.json({ data: transformed, total: count, page, page_size: pageSize });
 }
 
 export async function POST(req: NextRequest) {
