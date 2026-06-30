@@ -235,6 +235,9 @@ export async function POST(request: NextRequest) {
       return unauthorizedResponse();
     }
     const enterpriseId = await getEnterpriseId(request, user.id);
+    if (!enterpriseId) {
+      return NextResponse.json({ error: '请先加入企业' }, { status: 403 });
+    }
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
@@ -315,137 +318,86 @@ export async function POST(request: NextRequest) {
       // Count how many answers were merged for this entry
       const answersCount = (entry.answer.match(/回答[一二三四五六七八九十]+：/g) || []).length || 1;
 
-      // Check if an entry with the same question already exists (within same enterprise)
+      // Check if an entry with the same question AND answer already exists (within same enterprise)
       let existingQuery = client
         .from('knowledge_entries')
-        .select('id, answer, current_version')
-        .ilike('question', entry.question.trim());
-      if (enterpriseId) {
-        existingQuery = existingQuery.eq('enterprise_id', enterpriseId);
-      } else {
-        existingQuery = existingQuery.is('enterprise_id', null);
+        .select('id, answer')
+        .ilike('question', entry.question.trim())
+        .ilike('answer', entry.answer.trim());
+      if (!enterpriseId) {
+        continue;
       }
+      existingQuery = existingQuery.eq('enterprise_id', enterpriseId);
       const { data: existing } = await existingQuery.maybeSingle();
 
       if (existing) {
-        const existingId = (existing as Record<string, unknown>).id as string;
-        const existingAnswer = (existing as Record<string, unknown>).answer as string;
-        const existingVersion = (existing as Record<string, unknown>).current_version as number;
-
-        // Check if the answer is exactly the same → skip
-        if (existingAnswer.trim() === entry.answer.trim()) {
-          resultEntries.push({
-            id: existingId,
-            question: entry.question,
-            answers_count: answersCount,
-            action: 'skipped',
-          });
-          continue;
-        }
-
-        // Different answer → update (overwrite)
-        const newVersion = existingVersion + 1;
-
-        const { error: updateError } = await client
-          .from('knowledge_entries')
-          .update({
-            answer: entry.answer,
-            category_id: resolvedCategoryId,
-            current_version: newVersion,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existingId);
-
-        if (updateError) {
-          console.error('更新条目失败:', updateError.message);
-          continue;
-        }
-
-        // Create version record
-        await client.from('entry_versions').insert({
-          entry_id: existingId,
-          version: newVersion,
-          question: entry.question,
-          answer: entry.answer,
-          change_note: `通过${isXlsx ? 'Excel' : 'Word'}文档导入覆盖更新${answersCount > 1 ? `（含${answersCount}个回答版本）` : ''}`,
-        });
-
-        // Update tag associations: replace with new set
-        await client.from('knowledge_entry_tags').delete().eq('entry_id', existingId);
-        if (resolvedTagIds.length > 0) {
-          const tagRecords = resolvedTagIds.map((tagId) => ({
-            entry_id: existingId,
-            tag_id: tagId,
-          }));
-          await client.from('knowledge_entry_tags').insert(tagRecords);
-        }
-
+        // Same question + same answer → skip
         resultEntries.push({
-          id: existingId,
+          id: (existing as Record<string, unknown>).id as string,
           question: entry.question,
           answers_count: answersCount,
-          action: 'updated',
+          action: 'skipped',
         });
-      } else {
-        // New question → create entry
-        const { data: newEntry, error: entryError } = await client
-          .from('knowledge_entries')
-          .insert({
-            question: entry.question,
-            answer: entry.answer,
-            category_id: resolvedCategoryId,
-            enterprise_id: enterpriseId,
-            current_version: 1,
-          })
-          .select('id, question')
-          .maybeSingle();
-
-        if (entryError) {
-          console.error('导入条目失败:', entryError.message);
-          continue;
-        }
-        if (!newEntry) continue;
-
-        const entryId = (newEntry as Record<string, unknown>).id as string;
-
-        // Create initial version
-        await client.from('entry_versions').insert({
-          entry_id: entryId,
-          version: 1,
-          question: entry.question,
-          answer: entry.answer,
-          change_note: `通过${isXlsx ? 'Excel' : 'Word'}文档导入${answersCount > 1 ? `（含${answersCount}个回答版本）` : ''}`,
-        });
-
-        // Create tag associations
-        if (resolvedTagIds.length > 0) {
-          const tagRecords = resolvedTagIds.map((tagId) => ({
-            entry_id: entryId,
-            tag_id: tagId,
-          }));
-          await client.from('knowledge_entry_tags').insert(tagRecords);
-        }
-
-        resultEntries.push({
-          id: entryId,
-          question: (newEntry as Record<string, unknown>).question as string,
-          answers_count: answersCount,
-          action: 'created',
-        });
+        continue;
       }
+
+      // Different question OR different answer → create new entry
+      // (Same question with different answer will be grouped in the UI)
+      const { data: newEntry, error: entryError } = await client
+        .from('knowledge_entries')
+        .insert({
+          question: entry.question,
+          answer: entry.answer,
+          category_id: resolvedCategoryId,
+          enterprise_id: enterpriseId,
+          current_version: 1,
+        })
+        .select('id, question')
+        .maybeSingle();
+
+      if (entryError) {
+        console.error('导入条目失败:', entryError.message);
+        continue;
+      }
+      if (!newEntry) continue;
+
+      const entryId = (newEntry as Record<string, unknown>).id as string;
+
+      // Create initial version
+      await client.from('entry_versions').insert({
+        entry_id: entryId,
+        version: 1,
+        question: entry.question,
+        answer: entry.answer,
+        change_note: `通过${isXlsx ? 'Excel' : 'Word'}文档导入${answersCount > 1 ? `（含${answersCount}个回答版本）` : ''}`,
+      });
+
+      // Create tag associations
+      if (resolvedTagIds.length > 0) {
+        const tagRecords = resolvedTagIds.map((tagId) => ({
+          entry_id: entryId,
+          tag_id: tagId,
+        }));
+        await client.from('knowledge_entry_tags').insert(tagRecords);
+      }
+
+      resultEntries.push({
+        id: entryId,
+        question: (newEntry as Record<string, unknown>).question as string,
+        answers_count: answersCount,
+        action: 'created',
+      });
     }
 
     const created = resultEntries.filter((e) => e.action === 'created').length;
-    const updated = resultEntries.filter((e) => e.action === 'updated').length;
     const skipped = resultEntries.filter((e) => e.action === 'skipped').length;
 
     return NextResponse.json({
       data: {
         total_parsed: entries.length,
         created,
-        updated,
         skipped,
-        imported: created + updated,
+        imported: created,
         entries: resultEntries,
       },
     });

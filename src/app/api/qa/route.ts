@@ -25,7 +25,13 @@ export async function POST(req: NextRequest) {
     .eq('is_active', true)
     .or(`question.ilike.%${question}%,answer.ilike.%${question}%`)
     .limit(3);
-  searchQuery = enterpriseId ? searchQuery.eq('enterprise_id', enterpriseId) : searchQuery.is('enterprise_id', null);
+  if (!enterpriseId) {
+    return new Response(JSON.stringify({ error: '请先加入企业' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  searchQuery = searchQuery.eq('enterprise_id', enterpriseId);
 
   const { data: entries, error: searchError } = await searchQuery;
 

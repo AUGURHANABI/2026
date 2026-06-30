@@ -7,69 +7,56 @@ export async function GET(req: NextRequest) {
   if (!user) return unauthorizedResponse();
 
   const enterpriseId = await getEnterpriseId(req, user.id);
+  if (!enterpriseId) {
+    return NextResponse.json({ error: '请先加入企业' }, { status: 403 });
+  }
+
   const client = getSupabaseClientOrThrow();
   const searchParams = req.nextUrl.searchParams;
   const type = searchParams.get('type') || 'overview';
 
-  // Build enterprise filter helper
-  const entFilter = enterpriseId ? { col: 'enterprise_id', val: enterpriseId } : { col: 'enterprise_id', val: null as string | null, isNull: true };
-  const applyEntFilter = (query: ReturnType<typeof client.from>['select'] | ReturnType<typeof client.from>['select'] | ReturnType<typeof client.from>['select']) => {
-    // We need a different approach since query builder types are complex
-    return query;
-  };
-
   if (type === 'overview') {
-    // Build base queries with enterprise filter
-    const entriesQuery = client.from('knowledge_entries').select('*', { count: 'exact', head: true });
-    const categoriesQuery = client.from('categories').select('*', { count: 'exact', head: true });
-    const tagsQuery = client.from('tags').select('*', { count: 'exact', head: true });
-    const qaQuery = client.from('qa_history').select('*', { count: 'exact', head: true });
-
-    // Apply enterprise isolation
-    const filteredEntries = enterpriseId ? entriesQuery.eq('enterprise_id', enterpriseId) : entriesQuery.is('enterprise_id', null);
-    const filteredCategories = enterpriseId ? categoriesQuery.eq('enterprise_id', enterpriseId) : categoriesQuery.is('enterprise_id', null);
-    const filteredTags = enterpriseId ? tagsQuery.eq('enterprise_id', enterpriseId) : tagsQuery.is('enterprise_id', null);
-    const filteredQA = enterpriseId ? qaQuery.eq('enterprise_id', enterpriseId) : qaQuery.is('enterprise_id', null);
+    const entriesQuery = client.from('knowledge_entries').select('*', { count: 'exact', head: true }).eq('enterprise_id', enterpriseId);
+    const categoriesQuery = client.from('categories').select('*', { count: 'exact', head: true }).eq('enterprise_id', enterpriseId);
+    const tagsQuery = client.from('tags').select('*', { count: 'exact', head: true }).eq('enterprise_id', enterpriseId);
+    const qaQuery = client.from('qa_history').select('*', { count: 'exact', head: true }).eq('enterprise_id', enterpriseId);
 
     const [
       { count: totalEntries, error: entriesError },
       { count: totalCategories, error: categoriesError },
       { count: totalTags, error: tagsError },
       { count: totalQA, error: qaError },
-    ] = await Promise.all([filteredEntries, filteredCategories, filteredTags, filteredQA]);
+    ] = await Promise.all([entriesQuery, categoriesQuery, tagsQuery, qaQuery]);
 
     if (entriesError) throw new Error(`统计条目数失败: ${entriesError.message}`);
     if (categoriesError) throw new Error(`统计分类数失败: ${categoriesError.message}`);
     if (tagsError) throw new Error(`统计标签数失败: ${tagsError.message}`);
     if (qaError) throw new Error(`统计问答数失败: ${qaError.message}`);
 
-    // Get top entries by usage
-    let topEntriesQuery = client
+    const topEntriesQuery = client
       .from('knowledge_entries')
       .select('id, question, usage_count, effectiveness_score, categories(name)')
+      .eq('enterprise_id', enterpriseId)
       .order('usage_count', { ascending: false })
       .limit(5);
-    topEntriesQuery = enterpriseId ? topEntriesQuery.eq('enterprise_id', enterpriseId) : topEntriesQuery.is('enterprise_id', null);
 
     const { data: topEntries, error: topError } = await topEntriesQuery;
     if (topError) throw new Error(`查询热门话术失败: ${topError.message}`);
 
-    // Get recent QA history
-    let recentQAQuery = client
+    const recentQAQuery = client
       .from('qa_history')
       .select('*')
+      .eq('enterprise_id', enterpriseId)
       .order('created_at', { ascending: false })
       .limit(10);
-    recentQAQuery = enterpriseId ? recentQAQuery.eq('enterprise_id', enterpriseId) : recentQAQuery.is('enterprise_id', null);
 
     const { data: recentQA, error: recentError } = await recentQAQuery;
     if (recentError) throw new Error(`查询最近问答失败: ${recentError.message}`);
 
-    // Get category distribution
-    let catDistQuery = client
+    const catDistQuery = client
       .from('knowledge_entries')
-      .select('category_id, categories(id, name)');
-    catDistQuery = enterpriseId ? catDistQuery.eq('enterprise_id', enterpriseId) : catDistQuery.is('enterprise_id', null);
+      .select('category_id, categories(id, name)')
+      .eq('enterprise_id', enterpriseId);
 
     const { data: categoryDist, error: catDistError } = await catDistQuery;
     if (catDistError) throw new Error(`查询分类分布失败: ${catDistError.message}`);
@@ -105,12 +92,12 @@ export async function GET(req: NextRequest) {
     const pageSize = parseInt(searchParams.get('page_size') || '20', 10);
     const from = (page - 1) * pageSize;
 
-    let query = client
+    const query = client
       .from('qa_history')
       .select('*', { count: 'exact' })
+      .eq('enterprise_id', enterpriseId)
       .order('created_at', { ascending: false })
       .range(from, from + pageSize - 1);
-    query = enterpriseId ? query.eq('enterprise_id', enterpriseId) : query.is('enterprise_id', null);
 
     const { data, error, count } = await query;
     if (error) throw new Error(`查询问答历史失败: ${error.message}`);
@@ -118,11 +105,11 @@ export async function GET(req: NextRequest) {
   }
 
   if (type === 'effectiveness') {
-    let query = client
+    const query = client
       .from('qa_history')
       .select('effectiveness_rating')
+      .eq('enterprise_id', enterpriseId)
       .not('effectiveness_rating', 'is', null);
-    query = enterpriseId ? query.eq('enterprise_id', enterpriseId) : query.is('enterprise_id', null);
 
     const { data, error } = await query;
     if (error) throw new Error(`查询效果评分失败: ${error.message}`);
@@ -148,5 +135,5 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  return NextResponse.json({ error: '未知的统计类型' }, { status: 400 });
+  return NextResponse.json({ error: 'Unknown statistics type' }, { status: 400 });
 }

@@ -512,9 +512,22 @@ export function KnowledgeList() {
                       )}
                     </div>
                     <div className="relative group/answer isolate" onCopy={() => handleTextCopy(entry)}>
-                      <p className="text-sm text-slate-500 line-clamp-2 pr-8 overflow-hidden">
-                        {entry.answer}
-                      </p>
+                      {entry.answers && entry.answers.length > 1 ? (
+                        <div className="space-y-1.5 pr-8 overflow-hidden">
+                          {entry.answers.map((ans: { id: string; answer: string }, idx: number) => (
+                            <p key={ans.id} className="text-sm text-slate-500 line-clamp-2 overflow-hidden">
+                              <span className="inline-block bg-cyan-50 text-cyan-700 text-xs font-medium px-1.5 py-0.5 rounded mr-1.5">
+                                答案{idx + 1}
+                              </span>
+                              {ans.answer}
+                            </p>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-500 line-clamp-2 pr-8 overflow-hidden">
+                          {entry.answer}
+                        </p>
+                      )}
                       <button
                         onClick={(e) => handleCopyAnswer(entry, e)}
                         className="absolute top-0 right-0 opacity-0 group-hover/answer:opacity-100 transition-opacity p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-cyan-600"
@@ -801,8 +814,23 @@ export function KnowledgeList() {
                     )}
                   </Button>
                 </div>
-                <div className="mt-1 p-3 bg-slate-50 rounded-lg text-slate-700 whitespace-pre-wrap text-sm leading-relaxed max-h-[300px] overflow-y-auto isolate" onCopy={() => handleTextCopy(selectedEntry)}>
-                  {selectedEntry.answer}
+                <div className="mt-1 isolate">
+                  {selectedEntry.answers && selectedEntry.answers.length > 1 ? (
+                    <div className="space-y-3">
+                      {selectedEntry.answers.map((ans: { id: string; answer: string }, idx: number) => (
+                        <div key={ans.id} className="p-3 bg-slate-50 rounded-lg text-slate-700 whitespace-pre-wrap text-sm leading-relaxed max-h-[200px] overflow-y-auto overflow-hidden" onCopy={() => handleTextCopy(selectedEntry)}>
+                          <span className="inline-block bg-cyan-100 text-cyan-700 text-xs font-semibold px-2 py-0.5 rounded mb-2">
+                            答案 {idx + 1}
+                          </span>
+                          <div>{ans.answer}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-slate-50 rounded-lg text-slate-700 whitespace-pre-wrap text-sm leading-relaxed max-h-[300px] overflow-y-auto overflow-hidden" onCopy={() => handleTextCopy(selectedEntry)}>
+                      {selectedEntry.answer}
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -21,12 +21,11 @@ export async function GET(req: NextRequest) {
     .select('*, categories(id, name), knowledge_entry_tags(tag_id, tags(id, name, color))', { count: 'exact' })
     .order('created_at', { ascending: false });
 
-  // Enterprise isolation
-  if (enterpriseId) {
-    query = query.eq('enterprise_id', enterpriseId);
-  } else {
-    query = query.is('enterprise_id', null);
+  // Enterprise isolation - must have an enterprise to see data
+  if (!enterpriseId) {
+    return NextResponse.json({ data: [], total: 0, page, page_size: pageSize });
   }
+  query = query.eq('enterprise_id', enterpriseId);
 
   if (category_id) {
     query = query.eq('category_id', category_id);
@@ -60,7 +59,7 @@ export async function GET(req: NextRequest) {
   if (error) throw new Error(`查询知识库失败: ${error.message}`);
 
   // Transform the nested tag data
-  const transformed = (data ?? []).map((entry: Record<string, unknown>) => {
+  const transformed: Array<Record<string, unknown>> = (data ?? []).map((entry: Record<string, unknown>) => {
     const tags = ((entry.knowledge_entry_tags as Array<Record<string, unknown>>) ?? []).map(
       (et: Record<string, unknown>) => et.tags as Record<string, unknown>
     ).filter(Boolean);
@@ -68,7 +67,29 @@ export async function GET(req: NextRequest) {
     return { ...rest, tags };
   });
 
-  return NextResponse.json({ data: transformed, total: count, page, page_size: pageSize });
+  // Group entries by question — merge same-question entries into one with multiple answers
+  const grouped = new Map<string, Record<string, unknown>>();
+  for (const entry of transformed) {
+    const key = String(entry.question).trim().toLowerCase();
+    if (grouped.has(key)) {
+      const existing = grouped.get(key)!;
+      const existingAnswers = (existing.answers as Array<{ id: string; answer: string }>) ?? [];
+      existingAnswers.push({ id: String(entry.id), answer: String(entry.answer) });
+      existing.answers = existingAnswers;
+      // Keep the most recent entry's metadata
+      existing.usage_count = Number(entry.usage_count) + Number(existing.usage_count);
+      existing.effectiveness_score = entry.effectiveness_score ?? existing.effectiveness_score;
+    } else {
+      grouped.set(key, {
+        ...entry,
+        answers: [{ id: String(entry.id), answer: String(entry.answer) }],
+      });
+    }
+  }
+
+  const result = Array.from(grouped.values());
+
+  return NextResponse.json({ data: result, total: count, page, page_size: pageSize });
 }
 
 export async function POST(req: NextRequest) {
@@ -76,6 +97,9 @@ export async function POST(req: NextRequest) {
   if (!user) return unauthorizedResponse();
 
   const enterpriseId = await getEnterpriseId(req, user.id);
+  if (!enterpriseId) {
+    return NextResponse.json({ error: '请先加入企业' }, { status: 403 });
+  }
   const client = getSupabaseClientOrThrow();
   const body = await req.json();
   const { question, answer, category_id, tag_ids } = body;
@@ -85,10 +109,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Create the entry
-  const insertData: Record<string, unknown> = { question, answer, category_id, current_version: 1 };
-  if (enterpriseId) {
-    insertData.enterprise_id = enterpriseId;
-  }
+  const insertData: Record<string, unknown> = { question, answer, category_id, enterprise_id: enterpriseId, current_version: 1 };
 
   const { data: entry, error: entryError } = await client
     .from('knowledge_entries')

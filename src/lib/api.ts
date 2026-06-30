@@ -231,6 +231,7 @@ export interface KnowledgeEntry {
   id: string;
   question: string;
   answer: string;
+  answers?: { id: string; answer: string }[];
   category_id: string | null;
   is_active: boolean;
   usage_count: number;

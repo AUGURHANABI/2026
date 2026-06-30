@@ -10,11 +10,10 @@ export async function GET(req: NextRequest) {
   const client = getSupabaseClientOrThrow();
 
   let query = client.from('categories').select('*').order('sort_order', { ascending: true });
-  if (enterpriseId) {
-    query = query.eq('enterprise_id', enterpriseId);
-  } else {
-    query = query.is('enterprise_id', null);
+  if (!enterpriseId) {
+    return NextResponse.json({ data: [] });
   }
+  query = query.eq('enterprise_id', enterpriseId);
 
   const { data, error } = await query;
   if (error) throw new Error(`查询分类失败: ${error.message}`);
@@ -26,6 +25,9 @@ export async function POST(req: NextRequest) {
   if (!user) return unauthorizedResponse();
 
   const enterpriseId = await getEnterpriseId(req, user.id);
+  if (!enterpriseId) {
+    return NextResponse.json({ error: '请先加入企业' }, { status: 403 });
+  }
   const client = getSupabaseClientOrThrow();
   const body = await req.json();
   const { name, description, sort_order } = body;
@@ -34,10 +36,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '分类名称不能为空' }, { status: 400 });
   }
 
-  const insertData: Record<string, unknown> = { name, description, sort_order: sort_order ?? 0 };
-  if (enterpriseId) {
-    insertData.enterprise_id = enterpriseId;
-  }
+  const insertData: Record<string, unknown> = { name, description, sort_order: sort_order ?? 0, enterprise_id: enterpriseId };
 
   const { data, error } = await client
     .from('categories')
