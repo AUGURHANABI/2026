@@ -283,6 +283,7 @@ export interface EntryComment {
   author: string;
   content: string;
   is_merged: boolean;
+  is_anonymous: boolean;
   created_at: string;
 }
 
@@ -319,7 +320,7 @@ export async function fetchEntryComments(entryId: string) {
   return res.json();
 }
 
-export async function addEntryComment(entryId: string, data: { author?: string; content: string }) {
+export async function addEntryComment(entryId: string, data: { author?: string; content: string; is_anonymous?: boolean }) {
   const res = await authFetch(`${API_BASE}/knowledge/${entryId}/comments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

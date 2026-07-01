@@ -106,6 +106,7 @@ export function KnowledgeList() {
   const [comments, setComments] = useState<EntryComment[]>([]);
   const [commentAuthor, setCommentAuthor] = useState('');
   const [commentContent, setCommentContent] = useState('');
+  const [commentAnonymous, setCommentAnonymous] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [mergingCommentId, setMergingCommentId] = useState<string | null>(null);
   const [hoverScore, setHoverScore] = useState(0);
@@ -117,6 +118,15 @@ export function KnowledgeList() {
   const [newTagName, setNewTagName] = useState('');
   const [creatingCategory, setCreatingCategory] = useState(false);
   const [creatingTag, setCreatingTag] = useState(false);
+
+  // Reply management states
+  const [managingReplies, setManagingReplies] = useState(false);
+  const [editingReplyId, setEditingReplyId] = useState<string | null>(null);
+  const [editReplyContent, setEditReplyContent] = useState('');
+  const [savingReply, setSavingReply] = useState(false);
+  const [showAddReply, setShowAddReply] = useState(false);
+  const [newReplyContent, setNewReplyContent] = useState('');
+  const [addingReply, setAddingReply] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -298,6 +308,12 @@ export function KnowledgeList() {
     setComments([]);
     setCommentAuthor('');
     setCommentContent('');
+    setCommentAnonymous(false);
+    setManagingReplies(false);
+    setEditingReplyId(null);
+    setEditReplyContent('');
+    setShowAddReply(false);
+    setNewReplyContent('');
     setHoverScore(0);
     setDetailCategory(entry.category_id ?? null);
     setDetailTags(entry.tags?.map(t => t.id) ?? []);
@@ -479,10 +495,12 @@ export function KnowledgeList() {
     setSubmittingComment(true);
     try {
       await addEntryComment(selectedEntry.id, {
-        author: commentAuthor.trim() || undefined,
+        author: commentAnonymous ? undefined : (commentAuthor.trim() || undefined),
         content: commentContent.trim(),
+        is_anonymous: commentAnonymous,
       });
       setCommentContent('');
+      setCommentAnonymous(false);
       await loadComments(selectedEntry.id);
     } catch (err) {
       alert(err instanceof Error ? err.message : '添加评论失败');
@@ -529,6 +547,76 @@ export function KnowledgeList() {
       alert(err instanceof Error ? err.message : '合并失败');
     } finally {
       setMergingCommentId(null);
+    }
+  };
+
+  // Reply management handlers
+  const handleStartEditReply = (entryId: string, content: string) => {
+    setEditingReplyId(entryId);
+    setEditReplyContent(content);
+  };
+
+  const handleSaveEditReply = async (entryId: string) => {
+    if (!editReplyContent.trim()) return;
+    setSavingReply(true);
+    try {
+      await updateKnowledge(entryId, { answer: editReplyContent.trim(), change_note: '编辑回复话术' });
+      // Refresh data
+      await loadData();
+      // Re-open detail with updated entry
+      const updated = entries.find(e => e.id === entryId);
+      if (updated) {
+        setSelectedEntry({ ...updated, answer: editReplyContent.trim() });
+      }
+      setEditingReplyId(null);
+      setEditReplyContent('');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '编辑回复话术失败');
+    } finally {
+      setSavingReply(false);
+    }
+  };
+
+  const handleDeleteReply = async (entryId: string) => {
+    if (!confirm('确定删除此回复话术？')) return;
+    try {
+      await deleteKnowledge(entryId);
+      await loadData();
+      // Close detail if only one entry was left
+      const remaining = entries.filter(e => e.question === selectedEntry?.question && e.id !== entryId);
+      if (remaining.length === 0) {
+        setShowDetail(false);
+      } else {
+        setSelectedEntry(remaining[0]);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '删除回复话术失败');
+    }
+  };
+
+  const handleAddReply = async () => {
+    if (!selectedEntry || !newReplyContent.trim()) return;
+    setAddingReply(true);
+    try {
+      await createKnowledge({
+        question: selectedEntry.question,
+        answer: newReplyContent.trim(),
+        category_id: selectedEntry.category_id,
+        tag_ids: selectedEntry.tags?.map(t => t.id) ?? [],
+      });
+      await loadData();
+      setNewReplyContent('');
+      setShowAddReply(false);
+      // Refresh the detail view - find the new entry
+      const res = await fetchKnowledge({ search: selectedEntry.question });
+      const newEntry = (res.data ?? []).find((e: KnowledgeEntry) => e.question === selectedEntry.question && e.answer === newReplyContent.trim());
+      if (newEntry) {
+        openDetail(newEntry, newEntry.question);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '添加回复话术失败');
+    } finally {
+      setAddingReply(false);
     }
   };
 
@@ -1008,16 +1096,38 @@ export function KnowledgeList() {
 
               {/* Answers */}
               <div className="space-y-3">
-                <Label className="text-slate-500">
-                  回复话术（共 {allAnswers.length} 条）
-                </Label>
-                {allAnswers.map((ans, idx) => (
+                <div className="flex items-center justify-between">
+                  <Label className="text-slate-500">
+                    回复话术（共 {allAnswers.length} 条）
+                  </Label>
+                  <Button
+                    variant={managingReplies ? 'default' : 'outline'}
+                    size="sm"
+                    className={`h-7 text-xs gap-1 ${managingReplies ? 'bg-cyan-600 hover:bg-cyan-700' : 'text-cyan-600 border-cyan-200 hover:bg-cyan-50'}`}
+                    onClick={() => {
+                      setManagingReplies(!managingReplies);
+                      setEditingReplyId(null);
+                      setShowAddReply(false);
+                    }}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    {managingReplies ? '完成管理' : '管理话术'}
+                  </Button>
+                </div>
+                {allAnswers.map((ans, idx) => {
+                  const isEditing = managingReplies && editingReplyId === ans.entryId;
+                  return (
                   <div
                     key={`${ans.entryId}-${ans.subIndex}`}
                     className={`rounded-lg border p-4 space-y-3 ${
-                      isMultiple
-                        ? 'border-slate-200 bg-white'
-                        : ''
+                      managingReplies
+                        ? 'border-cyan-200 bg-cyan-50/30'
+                        : isMultiple
+                          ? 'border-slate-200 bg-white'
+                          : ''
                     }`}
                   >
                     <div className="flex items-center justify-between">
@@ -1025,33 +1135,90 @@ export function KnowledgeList() {
                         回复话术 {idx + 1}
                       </span>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-400">使用 {ans.entry.answer_usage_counts?.[String(idx)] ?? 0} 次</span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs gap-1"
-                          onClick={(e) => handleCopyAnswer(ans.entry, idx, ans.content, e)}
-                        >
-                          {copiedId === `${ans.entry.id}-${idx}` ? (
-                            <>
-                              <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                              已复制
-                            </>
-                          ) : (
-                            <>
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                              复制
-                            </>
-                          )}
-                        </Button>
+                        {!managingReplies && (
+                          <>
+                            <span className="text-xs text-slate-400">使用 {ans.entry.answer_usage_counts?.[String(idx)] ?? 0} 次</span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs gap-1"
+                              onClick={(e) => handleCopyAnswer(ans.entry, idx, ans.content, e)}
+                            >
+                              {copiedId === `${ans.entry.id}-${idx}` ? (
+                                <>
+                                  <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                  已复制
+                                </>
+                              ) : (
+                                <>
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                  复制
+                                </>
+                              )}
+                            </Button>
+                          </>
+                        )}
+                        {managingReplies && (
+                          <div className="flex items-center gap-1">
+                            {isEditing ? (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                  disabled={savingReply}
+                                  onClick={() => handleSaveEditReply(ans.entryId)}
+                                >
+                                  {savingReply ? '保存中...' : '保存'}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-xs text-slate-500 hover:bg-slate-100"
+                                  onClick={() => { setEditingReplyId(null); setEditReplyContent(''); }}
+                                >
+                                  取消
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-xs text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50"
+                                  onClick={() => handleStartEditReply(ans.entryId, ans.entry.answer)}
+                                >
+                                  编辑
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-xs text-red-400 hover:text-red-600 hover:bg-red-50"
+                                  onClick={() => handleDeleteReply(ans.entryId)}
+                                >
+                                  删除
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <div className="isolate">
-                      <div className="p-3 bg-slate-50 rounded-lg text-slate-700 whitespace-pre-wrap text-sm leading-relaxed overflow-hidden" onCopy={() => handleTextCopy(ans.entry)}>
-                        {ans.content}
+                    {isEditing ? (
+                      <Textarea
+                        value={editReplyContent}
+                        onChange={(e) => setEditReplyContent(e.target.value)}
+                        className="min-h-[120px] text-sm"
+                        autoFocus
+                      />
+                    ) : (
+                      <div className="isolate">
+                        <div className="p-3 bg-slate-50 rounded-lg text-slate-700 whitespace-pre-wrap text-sm leading-relaxed overflow-hidden" onCopy={() => handleTextCopy(ans.entry)}>
+                          {ans.content}
+                        </div>
                       </div>
-                    </div>
-                    {isMultiple && (
+                    )}
+                    {!managingReplies && isMultiple && (
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1">
                           {[1, 2, 3, 4, 5].map((star) => (
@@ -1091,7 +1258,52 @@ export function KnowledgeList() {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
+                {/* Add new reply in manage mode */}
+                {managingReplies && !showAddReply && (
+                  <button
+                    className="w-full py-3 border-2 border-dashed border-slate-200 rounded-lg text-sm text-slate-400 hover:text-cyan-600 hover:border-cyan-300 transition-colors flex items-center justify-center gap-1"
+                    onClick={() => setShowAddReply(true)}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    新增回复话术
+                  </button>
+                )}
+                {managingReplies && showAddReply && (
+                  <div className="rounded-lg border border-cyan-200 bg-cyan-50/30 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-cyan-600">新增回复话术</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 text-xs text-slate-500 hover:bg-slate-100"
+                        onClick={() => { setShowAddReply(false); setNewReplyContent(''); }}
+                      >
+                        取消
+                      </Button>
+                    </div>
+                    <Textarea
+                      value={newReplyContent}
+                      onChange={(e) => setNewReplyContent(e.target.value)}
+                      placeholder="输入新的回复话术..."
+                      className="min-h-[120px] text-sm"
+                      autoFocus
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        className="bg-cyan-600 hover:bg-cyan-700 text-sm"
+                        disabled={!newReplyContent.trim() || addingReply}
+                        onClick={handleAddReply}
+                      >
+                        {addingReply ? '添加中...' : '添加话术'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Category & Status */}
@@ -1356,12 +1568,19 @@ export function KnowledgeList() {
                 {/* Comment Input */}
                 <div className="bg-white border border-slate-200 rounded-lg p-3 mb-3 space-y-2">
                   <div className="flex gap-2">
-                    <Input
-                      value={commentAuthor}
-                      onChange={(e) => setCommentAuthor(e.target.value)}
-                      placeholder="你的名字（选填）"
-                      className="w-[140px] text-sm"
-                    />
+                    {!commentAnonymous && (
+                      <Input
+                        value={commentAuthor}
+                        onChange={(e) => setCommentAuthor(e.target.value)}
+                        placeholder="你的名字（选填）"
+                        className="w-[140px] text-sm"
+                      />
+                    )}
+                    {commentAnonymous && (
+                      <div className="w-[140px] flex items-center px-3 h-9 rounded-md border border-slate-200 bg-slate-50 text-sm text-slate-400">
+                        匿名用户***
+                      </div>
+                    )}
                     <Input
                       value={commentContent}
                       onChange={(e) => setCommentContent(e.target.value)}
@@ -1375,7 +1594,15 @@ export function KnowledgeList() {
                       }}
                     />
                   </div>
-                  <div className="flex justify-end">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <Switch
+                        checked={commentAnonymous}
+                        onCheckedChange={setCommentAnonymous}
+                        className="data-[state=checked]:bg-slate-500"
+                      />
+                      <span className="text-xs text-slate-500">匿名评论</span>
+                    </label>
                     <Button
                       size="sm"
                       className="bg-cyan-600 hover:bg-cyan-700 text-sm"
@@ -1407,7 +1634,7 @@ export function KnowledgeList() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="text-sm font-medium text-slate-700">
-                                {comment.author}
+                                {comment.is_anonymous ? '匿名用户***' : comment.author}
                               </span>
                               <span className="text-xs text-slate-400">
                                 {new Date(comment.created_at).toLocaleString('zh-CN')}

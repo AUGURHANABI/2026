@@ -35,7 +35,7 @@ export async function POST(
   const { id } = await params;
   const client = getSupabaseClientOrThrow();
   const body = await req.json();
-  const { author, content } = body;
+  const { author, content, is_anonymous } = body;
 
   if (!content?.trim()) {
     return NextResponse.json({ error: '评论内容不能为空' }, { status: 400 });
@@ -55,8 +55,9 @@ export async function POST(
     .from('entry_comments')
     .insert({
       entry_id: id,
-      author: author?.trim() || user.email || '匿名用户',
+      author: is_anonymous ? '匿名用户***' : (author?.trim() || user.email || '匿名用户'),
       content: content.trim(),
+      is_anonymous: is_anonymous ?? false,
     })
     .select()
     .single();
