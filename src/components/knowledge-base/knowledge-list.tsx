@@ -909,22 +909,6 @@ export function KnowledgeList() {
               />
             </div>
             <div>
-              <Label>分类</Label>
-              <Select value={formCategory} onValueChange={setFormCategory}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="选择分类" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">无分类</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
               <Label>标签</Label>
               <div className="flex flex-wrap gap-2 mt-1">
                 {tags.map((tag) => (
@@ -980,22 +964,6 @@ export function KnowledgeList() {
                 rows={6}
                 className="mt-1"
               />
-            </div>
-            <div>
-              <Label>分类</Label>
-              <Select value={formCategory || '__none__'} onValueChange={setFormCategory}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="选择分类" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">无分类</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
             <div>
               <Label>标签</Label>
