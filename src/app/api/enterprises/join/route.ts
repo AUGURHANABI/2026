@@ -17,7 +17,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { invite_code } = body;
 
-  const trimmedCode = (invite_code || '').trim().toUpperCase();
+  // Strip all whitespace and non-alphanumeric characters, then uppercase
+  const trimmedCode = (invite_code || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   if (!trimmedCode) {
     return NextResponse.json({ error: '请输入邀请码' }, { status: 400 });
   }
