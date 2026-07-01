@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, isAdmin } from '@/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, isAdmin, getPermissionClient } from '@/lib/auth-helpers';
 
 // GET /api/permissions/members - List all members with roles (admin only)
 export async function GET(req: NextRequest) {
@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: '仅管理员可以查看成员列表' }, { status: 403 });
   }
 
-  const client = getSupabaseClientOrThrow();
+  const client = getPermissionClient() || getSupabaseClientOrThrow();
 
   // Get members
   const { data: members, error } = await client

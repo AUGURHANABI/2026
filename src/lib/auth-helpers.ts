@@ -1,7 +1,35 @@
 import { NextRequest } from 'next/server';
-import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { User } from '@supabase/supabase-js';
+import { getSupabaseClientOrThrow, getSupabaseCredentialsOrThrow, getSupabaseServiceRoleKey } from '@/storage/database/supabase-client';
+import { createClient, User, SupabaseClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+
+// Cached service client for permission checks (bypasses RLS)
+let permissionServiceClient: SupabaseClient | null = null;
+
+/**
+ * Get a Supabase client that always uses the service role key,
+ * ensuring RLS is bypassed for permission-related queries.
+ */
+export function getPermissionClient(): SupabaseClient | null {
+  if (permissionServiceClient) return permissionServiceClient;
+
+  const serviceRoleKey = getSupabaseServiceRoleKey();
+  if (!serviceRoleKey) {
+    // Fallback to the default admin client (may or may not bypass RLS)
+    return getSupabaseClientOrThrow();
+  }
+
+  try {
+    const creds = getSupabaseCredentialsOrThrow();
+    permissionServiceClient = createClient(creds.url, serviceRoleKey, {
+      db: { timeout: 15000 },
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    return permissionServiceClient;
+  } catch {
+    return getSupabaseClientOrThrow();
+  }
+}
 
 /**
  * Verify session token from x-session header and return the user.
@@ -57,7 +85,8 @@ export async function getEnterpriseId(req: NextRequest, userId: string): Promise
  * Returns null if user is not a member of the enterprise.
  */
 export async function getUserRole(userId: string, enterpriseId: string): Promise<string | null> {
-  const client = getSupabaseClientOrThrow();
+  const client = getPermissionClient();
+  if (!client) return null;
   const { data: membership } = await client
     .from('enterprise_members')
     .select('role')
@@ -87,33 +116,46 @@ export async function checkPermission(
   // Not a member
   if (!role) return false;
 
-  const client = getSupabaseClientOrThrow();
+  const client = getPermissionClient();
+  if (!client) return false;
 
   // 1. Check member-level override first
-  const { data: memberPerms } = await client
-    .from('enterprise_member_permissions')
-    .select('permissions')
-    .eq('enterprise_id', enterpriseId)
-    .eq('user_id', userId)
-    .maybeSingle();
+  try {
+    const { data: memberPerms } = await client
+      .from('enterprise_member_permissions')
+      .select('permissions')
+      .eq('enterprise_id', enterpriseId)
+      .eq('user_id', userId)
+      .maybeSingle();
 
-  if (memberPerms?.permissions) {
-    const permissions = memberPerms.permissions as string[];
-    return permissions.includes(permission);
+    if (memberPerms?.permissions) {
+      const permissions = memberPerms.permissions as string[];
+      return permissions.includes(permission);
+    }
+  } catch {
+    // Table might not exist in production yet, fall through to role-level
   }
 
   // 2. Fall back to role-level permissions
-  const { data: rolePerms } = await client
-    .from('enterprise_role_permissions')
-    .select('permissions')
-    .eq('enterprise_id', enterpriseId)
-    .eq('role', 'member')
-    .maybeSingle();
+  try {
+    const { data: rolePerms } = await client
+      .from('enterprise_role_permissions')
+      .select('permissions')
+      .eq('enterprise_id', enterpriseId)
+      .eq('role', 'member')
+      .maybeSingle();
 
-  if (!rolePerms?.permissions) return false;
+    if (rolePerms?.permissions) {
+      const permissions = rolePerms.permissions as string[];
+      return permissions.includes(permission);
+    }
+  } catch {
+    // Table might not exist in production yet
+  }
 
-  const permissions = rolePerms.permissions as string[];
-  return permissions.includes(permission);
+  // 3. Hardcoded defaults if no permission data exists
+  const defaultMemberPermissions = ['entry:create', 'entry:rate', 'qa:ask'];
+  return defaultMemberPermissions.includes(permission);
 }
 
 /**

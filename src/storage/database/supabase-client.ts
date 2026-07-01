@@ -192,6 +192,9 @@ function getSupabaseClient(token?: string): SupabaseClient | null {
     if (adminClient) return adminClient;
 
     const serviceRoleKey = getSupabaseServiceRoleKey();
+    if (!serviceRoleKey) {
+      console.warn('[supabase] WARNING: COZE_SUPABASE_SERVICE_ROLE_KEY not set. Admin client will use anon key - RLS-protected tables may not be accessible.');
+    }
     const key = serviceRoleKey ?? creds.anonKey;
 
     const globalOptions: Record<string, unknown> = {};

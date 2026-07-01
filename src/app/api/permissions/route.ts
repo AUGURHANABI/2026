@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, isAdmin, getUserRole } from '@/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, isAdmin, getUserRole, getPermissionClient } from '@/lib/auth-helpers';
 
 // All available permissions with labels and categories
 export const PERMISSION_DEFINITIONS = [
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: '请先加入企业' }, { status: 403 });
   }
 
-  const client = getSupabaseClientOrThrow();
+  const client = getPermissionClient() || getSupabaseClientOrThrow();
   const userRole = await getUserRole(user.id, enterpriseId);
   const isUserAdmin = userRole === 'owner' || userRole === 'admin';
 
@@ -57,11 +57,16 @@ export async function GET(req: NextRequest) {
   // Get all member-level overrides for this enterprise (admin only)
   let memberOverrides: Array<{ user_id: string; permissions: string[] }> = [];
   if (isUserAdmin) {
-    const { data: overrides } = await client
-      .from('enterprise_member_permissions')
-      .select('user_id, permissions')
-      .eq('enterprise_id', enterpriseId);
-    memberOverrides = (overrides ?? []) as Array<{ user_id: string; permissions: string[] }>;
+    try {
+      const { data: overrides } = await client
+        .from('enterprise_member_permissions')
+        .select('user_id, permissions')
+        .eq('enterprise_id', enterpriseId);
+      memberOverrides = (overrides ?? []) as Array<{ user_id: string; permissions: string[] }>;
+    } catch {
+      // Table might not exist in production yet
+      memberOverrides = [];
+    }
   }
 
   // Calculate current user's effective permissions
@@ -124,7 +129,7 @@ export async function PUT(req: NextRequest) {
   const validKeys: string[] = PERMISSION_DEFINITIONS.map(p => p.key);
   const filteredPermissions = permissions.filter((p: string) => validKeys.includes(p));
 
-  const client = getSupabaseClientOrThrow();
+  const client = getPermissionClient() || getSupabaseClientOrThrow();
 
   // Type: role-level permissions
   if (!type || type === 'role') {
@@ -218,7 +223,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: '参数错误' }, { status: 400 });
   }
 
-  const client = getSupabaseClientOrThrow();
+  const client = getPermissionClient() || getSupabaseClientOrThrow();
   const { error } = await client
     .from('enterprise_member_permissions')
     .delete()
