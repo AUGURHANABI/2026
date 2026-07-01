@@ -18,6 +18,8 @@ export async function GET(req: NextRequest) {
   }
 
   const client = getSupabaseClientOrThrow();
+
+  // Get members
   const { data: members, error } = await client
     .from('enterprise_members')
     .select('id, user_id, role, joined_at')
@@ -28,10 +30,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `获取成员列表失败: ${error.message}` }, { status: 500 });
   }
 
-  // Try to get user emails from auth.users - not directly accessible via client
-  // We'll return member data and let frontend resolve emails if needed
+  // Try to fetch user emails using admin client
+  const adminClient = getSupabaseClientOrThrow();
+  const enrichedMembers = await Promise.all(
+    (members || []).map(async (m: { id: string; user_id: string; role: string; joined_at: string }) => {
+      let user_email = '';
+      try {
+        const { data: userInfo } = await adminClient.auth.admin.getUserById(m.user_id);
+        user_email = userInfo?.user?.email || '';
+      } catch {
+        // ignore
+      }
+      return { ...m, user_email };
+    })
+  );
+
   return NextResponse.json({
-    data: members || [],
+    data: enrichedMembers,
     currentUserId: user.id,
   });
 }

@@ -407,9 +407,15 @@ export interface PermissionDefinition {
   category: string;
 }
 
+export interface MemberOverride {
+  user_id: string;
+  permissions: string[];
+}
+
 export interface PermissionsData {
   definitions: PermissionDefinition[];
   permissionsByRole: Record<string, string[]>;
+  memberOverrides: MemberOverride[];
   myPermissions: string[];
   myRole: string | null;
   isAdmin: boolean;
@@ -428,11 +434,37 @@ export async function updateRolePermissions(role: string, permissions: string[])
   const res = await authFetch(`${API_BASE}/permissions`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ role, permissions }),
+    body: JSON.stringify({ type: 'role', role, permissions }),
   });
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.error || '更新权限失败');
+  }
+  return res.json();
+}
+
+export async function updateMemberPermissions(userId: string, permissions: string[]) {
+  const res = await authFetch(`${API_BASE}/permissions`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'member', user_id: userId, permissions }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '更新成员权限失败');
+  }
+  return res.json();
+}
+
+export async function resetMemberPermissions(userId: string) {
+  const res = await authFetch(`${API_BASE}/permissions`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'member', user_id: userId }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '重置成员权限失败');
   }
   return res.json();
 }
@@ -442,6 +474,7 @@ export interface EnterpriseMember {
   user_id: string;
   role: string;
   joined_at: string;
+  user_email?: string;
 }
 
 export async function fetchEnterpriseMembers(): Promise<{ data: EnterpriseMember[]; currentUserId: string }> {

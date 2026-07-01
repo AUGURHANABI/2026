@@ -71,7 +71,8 @@ export async function getUserRole(userId: string, enterpriseId: string): Promise
 /**
  * Check if a user has a specific permission in their enterprise.
  * - Owner/Admin always has all permissions
- * - Member's permissions are checked against enterprise_role_permissions table
+ * - Member-level overrides (enterprise_member_permissions) take priority
+ * - Falls back to role-level permissions (enterprise_role_permissions)
  */
 export async function checkPermission(
   userId: string,
@@ -86,8 +87,22 @@ export async function checkPermission(
   // Not a member
   if (!role) return false;
 
-  // Member: check role permissions
   const client = getSupabaseClientOrThrow();
+
+  // 1. Check member-level override first
+  const { data: memberPerms } = await client
+    .from('enterprise_member_permissions')
+    .select('permissions')
+    .eq('enterprise_id', enterpriseId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (memberPerms?.permissions) {
+    const permissions = memberPerms.permissions as string[];
+    return permissions.includes(permission);
+  }
+
+  // 2. Fall back to role-level permissions
   const { data: rolePerms } = await client
     .from('enterprise_role_permissions')
     .select('permissions')

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, isAdmin, getUserRole, checkPermission } from '@/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, isAdmin, getUserRole } from '@/lib/auth-helpers';
 
 // All available permissions with labels and categories
 export const PERMISSION_DEFINITIONS = [
@@ -19,6 +19,7 @@ export const PERMISSION_DEFINITIONS = [
 export type PermissionKey = typeof PERMISSION_DEFINITIONS[number]['key'];
 
 // GET /api/permissions - Get permissions for the current enterprise
+// Query params: ?user_id=xxx (optional, to get a specific member's effective permissions)
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) return NextResponse.json({ error: '请先登录' }, { status: 401 });
@@ -53,18 +54,35 @@ export async function GET(req: NextRequest) {
     permissionsByRole['member'] = ['entry:create', 'entry:rate', 'qa:ask'];
   }
 
+  // Get all member-level overrides for this enterprise (admin only)
+  let memberOverrides: Array<{ user_id: string; permissions: string[] }> = [];
+  if (isUserAdmin) {
+    const { data: overrides } = await client
+      .from('enterprise_member_permissions')
+      .select('user_id, permissions')
+      .eq('enterprise_id', enterpriseId);
+    memberOverrides = (overrides ?? []) as Array<{ user_id: string; permissions: string[] }>;
+  }
+
   // Calculate current user's effective permissions
   let myPermissions: string[];
   if (isUserAdmin) {
     myPermissions = PERMISSION_DEFINITIONS.map(p => p.key);
   } else {
-    myPermissions = permissionsByRole['member'] || [];
+    // Check member-level override first
+    const myOverride = memberOverrides.find(o => o.user_id === user.id);
+    if (myOverride) {
+      myPermissions = myOverride.permissions;
+    } else {
+      myPermissions = permissionsByRole['member'] || [];
+    }
   }
 
   return NextResponse.json({
     data: {
       definitions: PERMISSION_DEFINITIONS,
       permissionsByRole,
+      memberOverrides,
       myPermissions,
       myRole: userRole,
       isAdmin: isUserAdmin,
@@ -72,7 +90,9 @@ export async function GET(req: NextRequest) {
   });
 }
 
-// PUT /api/permissions - Update permissions for a role (admin only)
+// PUT /api/permissions - Update permissions
+// Body: { type: 'role', role: 'member', permissions: [...] }
+//    or: { type: 'member', user_id: 'xxx', permissions: [...] }
 export async function PUT(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) return NextResponse.json({ error: '请先登录' }, { status: 401 });
@@ -89,15 +109,15 @@ export async function PUT(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { role, permissions } = body as { role: string; permissions: string[] };
+  const { type, role, user_id, permissions } = body as {
+    type?: 'role' | 'member';
+    role?: string;
+    user_id?: string;
+    permissions: string[];
+  };
 
-  if (!role || !Array.isArray(permissions)) {
+  if (!Array.isArray(permissions)) {
     return NextResponse.json({ error: '参数错误' }, { status: 400 });
-  }
-
-  // Only allow setting member permissions via this API (admin/owner always have all)
-  if (role !== 'member') {
-    return NextResponse.json({ error: '仅可设置普通成员权限' }, { status: 400 });
   }
 
   // Validate permission keys
@@ -106,24 +126,108 @@ export async function PUT(req: NextRequest) {
 
   const client = getSupabaseClientOrThrow();
 
-  // Upsert
-  const { data, error } = await client
-    .from('enterprise_role_permissions')
-    .upsert(
-      {
-        enterprise_id: enterpriseId,
-        role: 'member',
-        permissions: filteredPermissions,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'enterprise_id,role' }
-    )
-    .select()
-    .maybeSingle();
+  // Type: role-level permissions
+  if (!type || type === 'role') {
+    if (!role) {
+      return NextResponse.json({ error: '缺少 role 参数' }, { status: 400 });
+    }
+    if (role !== 'member') {
+      return NextResponse.json({ error: '仅可设置普通成员权限' }, { status: 400 });
+    }
 
-  if (error) {
-    return NextResponse.json({ error: `更新权限失败: ${error.message}` }, { status: 500 });
+    const { data, error } = await client
+      .from('enterprise_role_permissions')
+      .upsert(
+        {
+          enterprise_id: enterpriseId,
+          role: 'member',
+          permissions: filteredPermissions,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'enterprise_id,role' }
+      )
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      return NextResponse.json({ error: `更新权限失败: ${error.message}` }, { status: 500 });
+    }
+
+    return NextResponse.json({ data });
   }
 
-  return NextResponse.json({ data });
+  // Type: member-level permissions
+  if (type === 'member') {
+    if (!user_id) {
+      return NextResponse.json({ error: '缺少 user_id 参数' }, { status: 400 });
+    }
+
+    // Verify the target user is a member (not owner/admin) of this enterprise
+    const targetRole = await getUserRole(user_id, enterpriseId);
+    if (!targetRole) {
+      return NextResponse.json({ error: '该用户不属于当前企业' }, { status: 400 });
+    }
+    if (targetRole === 'owner' || targetRole === 'admin') {
+      return NextResponse.json({ error: '管理员默认拥有所有权限，无需单独设置' }, { status: 400 });
+    }
+
+    const { data, error } = await client
+      .from('enterprise_member_permissions')
+      .upsert(
+        {
+          enterprise_id: enterpriseId,
+          user_id,
+          permissions: filteredPermissions,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'enterprise_id,user_id' }
+      )
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      return NextResponse.json({ error: `更新成员权限失败: ${error.message}` }, { status: 500 });
+    }
+
+    return NextResponse.json({ data });
+  }
+
+  return NextResponse.json({ error: '无效的 type 参数' }, { status: 400 });
+}
+
+// DELETE /api/permissions - Remove member-level override (revert to role defaults)
+// Body: { type: 'member', user_id: 'xxx' }
+export async function DELETE(req: NextRequest) {
+  const user = await getAuthUser(req);
+  if (!user) return NextResponse.json({ error: '请先登录' }, { status: 401 });
+
+  const enterpriseId = await getEnterpriseId(req, user.id);
+  if (!enterpriseId) {
+    return NextResponse.json({ error: '请先加入企业' }, { status: 403 });
+  }
+
+  const isUserAdmin = await isAdmin(user.id, enterpriseId);
+  if (!isUserAdmin) {
+    return NextResponse.json({ error: '仅管理员可以设置权限' }, { status: 403 });
+  }
+
+  const body = await req.json();
+  const { type, user_id } = body as { type?: string; user_id?: string };
+
+  if (type !== 'member' || !user_id) {
+    return NextResponse.json({ error: '参数错误' }, { status: 400 });
+  }
+
+  const client = getSupabaseClientOrThrow();
+  const { error } = await client
+    .from('enterprise_member_permissions')
+    .delete()
+    .eq('enterprise_id', enterpriseId)
+    .eq('user_id', user_id);
+
+  if (error) {
+    return NextResponse.json({ error: `重置成员权限失败: ${error.message}` }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
 }
