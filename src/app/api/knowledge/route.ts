@@ -134,3 +134,66 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ data: entry });
 }
+
+// Batch delete entries
+export async function DELETE(req: NextRequest) {
+  const user = await getAuthUser(req);
+  if (!user) return unauthorizedResponse();
+
+  const enterpriseId = await getEnterpriseId(req, user.id);
+  if (!enterpriseId) {
+    return NextResponse.json({ error: '请先选择企业' }, { status: 400 });
+  }
+
+  const client = getSupabaseClientOrThrow();
+  const body = await req.json();
+  const { ids } = body as { ids: string[] };
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return NextResponse.json({ error: '请选择要删除的条目' }, { status: 400 });
+  }
+
+  // Delete related data first
+  // Delete comments
+  const { error: commentsError } = await client
+    .from('entry_comments')
+    .delete()
+    .in('entry_id', ids);
+
+  if (commentsError) console.error('删除评论失败:', commentsError.message);
+
+  // Delete entry versions
+  const { error: versionsError } = await client
+    .from('entry_versions')
+    .delete()
+    .in('entry_id', ids);
+
+  if (versionsError) console.error('删除版本记录失败:', versionsError.message);
+
+  // Delete tag associations
+  const { error: tagsError } = await client
+    .from('knowledge_entry_tags')
+    .delete()
+    .in('entry_id', ids);
+
+  if (tagsError) console.error('删除标签关联失败:', tagsError.message);
+
+  // Delete qa_history references
+  const { error: qaError } = await client
+    .from('qa_history')
+    .delete()
+    .in('entry_id', ids);
+
+  if (qaError) console.error('删除问答历史失败:', qaError.message);
+
+  // Finally delete the entries themselves
+  const { error: deleteError } = await client
+    .from('knowledge_entries')
+    .delete()
+    .in('id', ids)
+    .eq('enterprise_id', enterpriseId);
+
+  if (deleteError) throw new Error(`批量删除失败: ${deleteError.message}`);
+
+  return NextResponse.json({ success: true, deleted: ids.length });
+}

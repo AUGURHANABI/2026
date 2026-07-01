@@ -189,6 +189,19 @@ export async function deleteKnowledge(id: string) {
   return res.json();
 }
 
+export async function batchDeleteKnowledge(ids: string[]) {
+  const res = await authFetch(`${API_BASE}/knowledge`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '批量删除失败');
+  }
+  return res.json();
+}
+
 export async function fetchEntryVersions(id: string) {
   const res = await authFetch(`${API_BASE}/knowledge/${id}/versions`);
   if (!res.ok) throw new Error('获取版本历史失败');
