@@ -26,14 +26,50 @@ export async function POST(req: NextRequest) {
   const serviceClient = getSupabaseClientOrThrow();
 
   // Find enterprise by invite code (case-insensitive)
-  const { data: enterprise, error: findError } = await serviceClient
+  // Use .select() + take first instead of .maybeSingle() to avoid potential issues
+  let enterprise: { id: string; name: string; invite_code: string } | null = null;
+  let findError: string | null = null;
+
+  // Try 1: ilike (case-insensitive)
+  const { data: ilikeResults, error: ilikeError } = await serviceClient
     .from('enterprises')
     .select('id, name, invite_code')
     .ilike('invite_code', trimmedCode)
-    .maybeSingle();
+    .limit(1);
+
+  if (ilikeError) {
+    findError = ilikeError.message;
+  } else if (ilikeResults && ilikeResults.length > 0) {
+    enterprise = ilikeResults[0];
+  }
+
+  // Try 2: If ilike returned nothing, try exact match as fallback
+  if (!enterprise && !findError) {
+    const { data: eqResults, error: eqError } = await serviceClient
+      .from('enterprises')
+      .select('id, name, invite_code')
+      .eq('invite_code', trimmedCode)
+      .limit(1);
+
+    if (eqError) {
+      findError = eqError.message;
+    } else if (eqResults && eqResults.length > 0) {
+      enterprise = eqResults[0];
+    }
+  }
+
+  if (!enterprise && !findError) {
+    // Last resort: list all enterprises to check if table is accessible
+    const { data: allEnts, error: listError } = await serviceClient
+      .from('enterprises')
+      .select('id, name, invite_code')
+      .limit(10);
+
+    console.error('[join] Both ilike and eq returned no results. All enterprises:', JSON.stringify(allEnts), 'listError:', listError?.message, 'searchCode:', trimmedCode);
+  }
 
   if (findError) {
-    console.error('[join] Error finding enterprise:', findError.message);
+    console.error('[join] Error finding enterprise:', findError);
     return NextResponse.json({ error: '查询企业失败，请稍后重试' }, { status: 500 });
   }
   if (!enterprise) {
