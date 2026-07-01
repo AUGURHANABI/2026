@@ -65,7 +65,10 @@ export async function POST(req: NextRequest) {
       .select('id, name, invite_code')
       .limit(10);
 
-    console.error('[join] Both ilike and eq returned no results. All enterprises:', JSON.stringify(allEnts), 'listError:', listError?.message, 'searchCode:', trimmedCode);
+    // Also log DB URL (masked) and service role key availability for debugging
+    const supabaseUrl = process.env.COZE_SUPABASE_URL || 'NOT_SET';
+    const hasServiceRoleKey = !!process.env.COZE_SUPABASE_SERVICE_ROLE_KEY;
+    console.error('[join] Both ilike and eq returned no results. All enterprises:', JSON.stringify(allEnts), 'listError:', listError?.message, 'searchCode:', trimmedCode, 'dbUrl:', supabaseUrl.substring(0, 30) + '...', 'hasServiceRoleKey:', hasServiceRoleKey);
   }
 
   if (findError) {
