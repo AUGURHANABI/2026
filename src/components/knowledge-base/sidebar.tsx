@@ -55,8 +55,11 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, mobileOpen, onMobileC
         setEnterprises(data.data);
         const savedId = localStorage.getItem('current_enterprise_id');
         const found = data.data.find((e: Enterprise) => e.enterprise_id === savedId);
-        if (found || data.data[0]) {
-          setCurrentEnterprise(found || data.data[0]);
+        const current = found || data.data[0];
+        if (current) {
+          setCurrentEnterprise(current);
+          // Always persist to localStorage so other components (e.g. PermissionProvider) can read it
+          localStorage.setItem('current_enterprise_id', current.enterprise_id);
         }
       }
     } catch {
@@ -68,6 +71,8 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, mobileOpen, onMobileC
     setCurrentEnterprise(ent);
     localStorage.setItem('current_enterprise_id', ent.enterprise_id);
     setShowEnterpriseDropdown(false);
+    // Notify other components (e.g. PermissionProvider) that the enterprise changed
+    window.dispatchEvent(new Event('enterprise-changed'));
     window.location.reload();
   };
 
