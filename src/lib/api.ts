@@ -371,7 +371,7 @@ export async function mergeCommentToAnswer(entryId: string, commentId: string) {
 
 export async function recordUsage(entryId: string, answerIndex?: number): Promise<{ data: { id: string; usage_count: number; answer_usage_counts: Record<string, number>; counted: boolean } }> {
   const body: Record<string, unknown> = {};
-  if (answerIndex !== undefined) body.answerIndex = answerIndex;
+  if (answerIndex !== undefined) body.answer_index = answerIndex;
   const res = await authFetch(`${API_BASE}/knowledge/${entryId}/use`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
