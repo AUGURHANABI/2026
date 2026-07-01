@@ -1111,7 +1111,7 @@ export function KnowledgeList() {
                         </button>
                       </PopoverTrigger>
                       <PopoverContent
-                        className="w-56 p-2 z-[200]"
+                        className="w-72 p-2 z-[200]"
                         align="start"
                         onOpenAutoFocus={(e) => e.preventDefault()}
                       >
@@ -1216,7 +1216,7 @@ export function KnowledgeList() {
                       </button>
                     </PopoverTrigger>
                     <PopoverContent
-                      className="w-56 p-2 z-[200]"
+                      className="w-72 p-2 z-[200]"
                       align="start"
                       onOpenAutoFocus={(e) => e.preventDefault()}
                     >
