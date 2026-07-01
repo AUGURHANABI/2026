@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/lib/auth-helpers';
 
 // GET /api/knowledge/[id]/comments — 获取条目评论列表
 export async function GET(
@@ -78,6 +78,10 @@ export async function DELETE(
   // Check permission: comment:delete
   const enterpriseId = await getEnterpriseId(req, user.id);
   if (enterpriseId) {
+    // License check
+    const licenseErr = await checkLicenseExpired(enterpriseId);
+    if (licenseErr) return licenseErr;
+
     const canDelete = await checkPermission(user.id, enterpriseId, 'comment:delete');
     if (!canDelete) return forbiddenResponse('comment:delete');
   }

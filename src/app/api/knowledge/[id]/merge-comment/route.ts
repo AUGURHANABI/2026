@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/lib/auth-helpers';
 
 // POST /api/knowledge/[id]/merge-comment — 将评论内容合并到答案中
 export async function POST(
@@ -13,6 +13,10 @@ export async function POST(
   // Check permission: comment:merge
   const enterpriseId = await getEnterpriseId(req, user.id);
   if (enterpriseId) {
+    // License check
+    const licenseErr = await checkLicenseExpired(enterpriseId);
+    if (licenseErr) return licenseErr;
+
     const canMerge = await checkPermission(user.id, enterpriseId, 'comment:merge');
     if (!canMerge) return forbiddenResponse('comment:merge');
   }

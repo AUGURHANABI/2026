@@ -419,6 +419,7 @@ export interface PermissionsData {
   myPermissions: string[];
   myRole: string | null;
   isAdmin: boolean;
+  isDeveloper: boolean;
 }
 
 export async function fetchPermissions(): Promise<{ data: PermissionsData }> {
@@ -495,6 +496,83 @@ export async function updateMemberRole(memberId: string, role: string) {
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.error || '更新角色失败');
+  }
+  return res.json();
+}
+
+// ===== 开发者管理 =====
+
+export async function checkDeveloper(): Promise<{ isDeveloper: boolean }> {
+  const res = await authFetch(`${API_BASE}/developer/check`);
+  if (!res.ok) return { isDeveloper: false };
+  return res.json();
+}
+
+export interface DeveloperEnterprise {
+  id: string;
+  name: string;
+  invite_code: string;
+  owner_id: string;
+  owner_email: string;
+  member_count: number;
+  license_started_at: string | null;
+  license_expires_at: string | null;
+  created_at: string;
+  is_expired: boolean;
+}
+
+export async function fetchDeveloperEnterprises(): Promise<{ data: DeveloperEnterprise[] }> {
+  const res = await authFetch(`${API_BASE}/developer/enterprises`);
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '获取企业列表失败');
+  }
+  return res.json();
+}
+
+export async function updateEnterpriseLicense(
+  enterpriseId: string,
+  data: { license_years?: number; license_expires_at?: string | null; name?: string }
+) {
+  const res = await authFetch(`${API_BASE}/developer/enterprises/${enterpriseId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '更新授权失败');
+  }
+  return res.json();
+}
+
+export async function deleteEnterprise(enterpriseId: string) {
+  const res = await authFetch(`${API_BASE}/developer/enterprises/${enterpriseId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '删除企业失败');
+  }
+  return res.json();
+}
+
+export async function fetchEnterpriseMembersById(enterpriseId: string) {
+  const res = await authFetch(`${API_BASE}/developer/enterprises/${enterpriseId}/members`);
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '获取成员列表失败');
+  }
+  return res.json();
+}
+
+export async function removeEnterpriseMember(enterpriseId: string, userId: string) {
+  const res = await authFetch(`${API_BASE}/developer/enterprises/${enterpriseId}/members?user_id=${userId}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '移除成员失败');
   }
   return res.json();
 }

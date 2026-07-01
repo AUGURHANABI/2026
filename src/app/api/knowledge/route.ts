@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/lib/auth-helpers';
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
@@ -9,6 +9,12 @@ export async function GET(req: NextRequest) {
   const enterpriseId = await getEnterpriseId(req, user.id);
   const client = getSupabaseClientOrThrow();
   const searchParams = req.nextUrl.searchParams;
+
+  // License check
+  if (enterpriseId) {
+    const licenseErr = await checkLicenseExpired(enterpriseId);
+    if (licenseErr) return licenseErr;
+  }
   const category_id = searchParams.get('category_id');
   const tag_id = searchParams.get('tag_id');
   const search = searchParams.get('search');
@@ -92,6 +98,10 @@ export async function POST(req: NextRequest) {
   const canCreate = await checkPermission(user.id, enterpriseId, 'entry:create');
   if (!canCreate) return forbiddenResponse('entry:create');
 
+  // License check
+  const licenseErr = await checkLicenseExpired(enterpriseId);
+  if (licenseErr) return licenseErr;
+
   const client = getSupabaseClientOrThrow();
   const body = await req.json();
   const { question, answer, category_id, tag_ids } = body;
@@ -153,6 +163,10 @@ export async function DELETE(req: NextRequest) {
   // Check permission: entry:delete
   const canDelete = await checkPermission(user.id, enterpriseId, 'entry:delete');
   if (!canDelete) return forbiddenResponse('entry:delete');
+
+  // License check
+  const licenseErr = await checkLicenseExpired(enterpriseId);
+  if (licenseErr) return licenseErr;
 
   const client = getSupabaseClientOrThrow();
   const body = await req.json();

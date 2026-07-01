@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
 import { LLMClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
-import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/lib/auth-helpers';
 
 export async function POST(req: NextRequest) {
   const user = await getAuthUser(req);
@@ -16,6 +16,10 @@ export async function POST(req: NextRequest) {
 
   // Check permission: qa:ask
   if (enterpriseId) {
+    // License check
+    const licenseErr = await checkLicenseExpired(enterpriseId);
+    if (licenseErr) return licenseErr;
+
     const canAsk = await checkPermission(user.id, enterpriseId, 'qa:ask');
     if (!canAsk) return forbiddenResponse('qa:ask');
   }

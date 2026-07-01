@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/lib/auth-helpers';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 
@@ -242,6 +242,10 @@ export async function POST(request: NextRequest) {
     // Check permission: entry:import
     const canImport = await checkPermission(user.id, enterpriseId, 'entry:import');
     if (!canImport) return forbiddenResponse('entry:import');
+
+    // License check
+    const licenseErr = await checkLicenseExpired(enterpriseId);
+    if (licenseErr) return licenseErr;
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;

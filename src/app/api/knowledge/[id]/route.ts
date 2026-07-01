@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/lib/auth-helpers';
 
 export async function GET(
   req: NextRequest,
@@ -45,6 +45,10 @@ export async function PUT(
   // Check permission for content edits (question/answer/is_active changes)
   const enterpriseId = await getEnterpriseId(req, user.id);
   if (enterpriseId) {
+    // License check
+    const licenseErr = await checkLicenseExpired(enterpriseId);
+    if (licenseErr) return licenseErr;
+
     const isContentEdit = question !== undefined || answer !== undefined || is_active !== undefined;
     if (isContentEdit) {
       const canEdit = await checkPermission(user.id, enterpriseId, 'entry:edit');
@@ -135,6 +139,10 @@ export async function DELETE(
   // Check permission: entry:delete
   const enterpriseId = await getEnterpriseId(req, user.id);
   if (enterpriseId) {
+    // License check
+    const licenseErr = await checkLicenseExpired(enterpriseId);
+    if (licenseErr) return licenseErr;
+
     const canDelete = await checkPermission(user.id, enterpriseId, 'entry:delete');
     if (!canDelete) return forbiddenResponse('entry:delete');
   }

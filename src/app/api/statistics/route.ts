@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, unauthorizedResponse } from '@/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, unauthorizedResponse, checkLicenseExpired } from '@/lib/auth-helpers';
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
@@ -10,6 +10,10 @@ export async function GET(req: NextRequest) {
   if (!enterpriseId) {
     return NextResponse.json({ error: '请先加入企业' }, { status: 403 });
   }
+
+  // License check
+  const licenseErr = await checkLicenseExpired(enterpriseId);
+  if (licenseErr) return licenseErr;
 
   const client = getSupabaseClientOrThrow();
   const searchParams = req.nextUrl.searchParams;

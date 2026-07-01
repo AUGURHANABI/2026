@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, isAdmin, getUserRole, getPermissionClient } from '@/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, isAdmin, getUserRole, getPermissionClient, isDeveloper } from '@/lib/auth-helpers';
 
 // All available permissions with labels and categories
 export const PERMISSION_DEFINITIONS = [
@@ -83,6 +83,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Check developer status
+  const isUserDeveloper = await isDeveloper(user.id);
+
   return NextResponse.json({
     data: {
       definitions: PERMISSION_DEFINITIONS,
@@ -91,6 +94,7 @@ export async function GET(req: NextRequest) {
       myPermissions,
       myRole: userRole,
       isAdmin: isUserAdmin,
+      isDeveloper: isUserDeveloper,
     },
   });
 }

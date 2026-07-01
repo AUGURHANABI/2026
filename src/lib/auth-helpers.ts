@@ -167,6 +167,64 @@ export async function isAdmin(userId: string, enterpriseId: string): Promise<boo
 }
 
 /**
+ * Check if a user is a developer (can manage all enterprises).
+ */
+export async function isDeveloper(userId: string): Promise<boolean> {
+  const client = getPermissionClient();
+  if (!client) return false;
+  try {
+    const { data } = await client
+      .from('developers')
+      .select('id')
+      .eq('user_id', userId)
+      .maybeSingle();
+    return !!data;
+  } catch {
+    // Table might not exist
+    return false;
+  }
+}
+
+/**
+ * Check if an enterprise's license is still active (not expired).
+ * Returns true if license_expires_at is null (no expiration set) or in the future.
+ */
+export async function isLicenseActive(enterpriseId: string): Promise<{ active: boolean; expiresAt: string | null }> {
+  const client = getPermissionClient();
+  if (!client) return { active: true, expiresAt: null }; // If no client, assume active
+
+  try {
+    const { data } = await client
+      .from('enterprises')
+      .select('license_expires_at')
+      .eq('id', enterpriseId)
+      .maybeSingle();
+
+    if (!data || !data.license_expires_at) {
+      return { active: true, expiresAt: null }; // No expiration = perpetual license
+    }
+
+    const expiresAt = new Date(data.license_expires_at);
+    const now = new Date();
+    return { active: expiresAt > now, expiresAt: data.license_expires_at };
+  } catch {
+    return { active: true, expiresAt: null };
+  }
+}
+
+/**
+ * Check license and return expired response if inactive.
+ * Usage: const licenseErr = await checkLicenseExpired(enterpriseId); if (licenseErr) return licenseErr;
+ */
+export async function checkLicenseExpired(enterpriseId: string): Promise<Response | null> {
+  const license = await isLicenseActive(enterpriseId);
+  if (!license.active) {
+    return licenseExpiredResponse(license.expiresAt);
+  }
+  return null;
+}
+
+/**
  * Standard unauthorized response
  */
 export function unauthorizedResponse() {
@@ -182,6 +240,22 @@ export function unauthorizedResponse() {
 export function forbiddenResponse(permission?: string) {
   return new Response(
     JSON.stringify({ error: permission ? `没有 ${permission} 权限` : '没有操作权限' }),
+    {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+}
+
+/**
+ * License expired response
+ */
+export function licenseExpiredResponse(expiresAt: string | null) {
+  const msg = expiresAt
+    ? `企业授权已于 ${new Date(expiresAt).toLocaleDateString('zh-CN')} 到期，请联系管理员续期`
+    : '企业授权已到期，请联系管理员续期';
+  return new Response(
+    JSON.stringify({ error: msg, code: 'LICENSE_EXPIRED' }),
     {
       status: 403,
       headers: { 'Content-Type': 'application/json' },

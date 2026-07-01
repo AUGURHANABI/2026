@@ -12,8 +12,9 @@ interface Enterprise {
 
 interface SidebarProps {
   activeTab: string;
-  onTabChange: (tab: 'knowledge' | 'qa' | 'categories' | 'tags' | 'statistics' | 'permissions') => void;
+  onTabChange: (tab: 'knowledge' | 'qa' | 'categories' | 'tags' | 'statistics' | 'permissions' | 'developer') => void;
   isAdmin?: boolean;
+  isDeveloper?: boolean;
   mobileOpen?: boolean;
   onMobileClose?: () => void;
 }
@@ -27,8 +28,9 @@ const navItems = [
 ];
 
 const adminNavItem = { id: 'permissions' as const, label: '权限设置', icon: '🔐' };
+const developerNavItem = { id: 'developer' as const, label: '开发者管理', icon: '⚙️' };
 
-export function Sidebar({ activeTab, onTabChange, isAdmin, mobileOpen, onMobileClose }: SidebarProps) {
+export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOpen, onMobileClose }: SidebarProps) {
   const { user, session, signOut } = useAuth();
   const token = session?.access_token ?? null;
   const [enterprises, setEnterprises] = useState<Enterprise[]>([]);
@@ -251,6 +253,22 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, mobileOpen, onMobileC
             >
               <span className="text-base">{adminNavItem.icon}</span>
               <span>{adminNavItem.label}</span>
+            </button>
+          </>
+        )}
+        {isDeveloper && (
+          <>
+            <div className="mx-4 md:mx-6 my-2 border-t border-white/10" />
+            <button
+              onClick={() => handleNavClick(developerNavItem.id)}
+              className={`w-full flex items-center gap-3 px-4 md:px-6 py-3 text-sm transition-colors ${
+                activeTab === developerNavItem.id
+                  ? 'bg-cyan-600/20 text-cyan-400 border-r-2 border-cyan-400'
+                  : 'text-slate-300 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <span className="text-base">{developerNavItem.icon}</span>
+              <span>{developerNavItem.label}</span>
             </button>
           </>
         )}

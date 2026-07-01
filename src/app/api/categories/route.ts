@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse } from '@/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/lib/auth-helpers';
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
@@ -32,6 +32,10 @@ export async function POST(req: NextRequest) {
   // Check permission: category:manage
   const canManage = await checkPermission(user.id, enterpriseId, 'category:manage');
   if (!canManage) return forbiddenResponse('category:manage');
+
+  // License check
+  const licenseErr = await checkLicenseExpired(enterpriseId);
+  if (licenseErr) return licenseErr;
 
   const client = getSupabaseClientOrThrow();
   const body = await req.json();

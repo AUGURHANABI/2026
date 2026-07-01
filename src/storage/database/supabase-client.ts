@@ -271,4 +271,25 @@ function getSupabaseCredentialsOrThrow(): SupabaseCredentials {
   return creds;
 }
 
-export { loadEnvAsync, getSupabaseCredentials, getSupabaseCredentialsOrThrow, getSupabaseServiceRoleKey, getSupabaseClient, getSupabaseClientOrThrow };
+/**
+ * Get a Supabase admin client that always uses the service role key.
+ * This client bypasses RLS and has admin-level auth access.
+ * Returns null if credentials are not available.
+ */
+function getSupabaseAdminClient(): SupabaseClient | null {
+  const creds = getSupabaseCredentials();
+  if (!creds) return null;
+
+  if (adminClient) return adminClient;
+
+  const serviceRoleKey = getSupabaseServiceRoleKey();
+  if (!serviceRoleKey) return null;
+
+  adminClient = createClient(creds.url, serviceRoleKey, {
+    db: { timeout: 15000 },
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  return adminClient;
+}
+
+export { loadEnvAsync, getSupabaseCredentials, getSupabaseCredentialsOrThrow, getSupabaseServiceRoleKey, getSupabaseClient, getSupabaseClientOrThrow, getSupabaseAdminClient };
