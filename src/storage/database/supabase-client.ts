@@ -206,7 +206,7 @@ function getSupabaseClient(token?: string): SupabaseClient | null {
   // Return cached token client
   const cached = tokenClients.get(token);
   if (cached) return cached;
-  const globalOptions: Record<string, unknown> = {};
+
   const client = createClient(creds.url, creds.anonKey, {
     global: globalOptions,
     db: { timeout: 15000 },
