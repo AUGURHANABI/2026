@@ -127,6 +127,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
           setCurrentEnterpriseId(firstId);
           localStorage.setItem('current_enterprise_id', firstId);
         }
+
+        // Notify other components (e.g. PermissionProvider) that enterprise data is available
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('enterprise-changed'));
+        }
       }
     } catch (err) {
       console.error('Failed to load enterprises:', err);
