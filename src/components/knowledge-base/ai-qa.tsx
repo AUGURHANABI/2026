@@ -58,7 +58,7 @@ export function AIQA() {
 
     try {
       const token = session?.access_token ?? '';
-      const enterpriseId = typeof window !== 'undefined' ? localStorage.getItem('currentEnterpriseId') : null;
+      const enterpriseId = typeof window !== 'undefined' ? localStorage.getItem('current_enterprise_id') : null;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['x-session'] = token;
       if (enterpriseId) headers['x-enterprise-id'] = enterpriseId;
@@ -160,7 +160,7 @@ export function AIQA() {
   const loadHistory = async () => {
     try {
       const token = session?.access_token ?? '';
-      const enterpriseId = typeof window !== 'undefined' ? localStorage.getItem('currentEnterpriseId') : null;
+      const enterpriseId = typeof window !== 'undefined' ? localStorage.getItem('current_enterprise_id') : null;
       const headers: Record<string, string> = {};
       if (token) headers['x-session'] = token;
       if (enterpriseId) headers['x-enterprise-id'] = enterpriseId;
