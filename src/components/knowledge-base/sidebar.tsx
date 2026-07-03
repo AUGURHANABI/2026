@@ -80,11 +80,15 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOp
 
   const handleJoinEnterprise = async () => {
     if (!joinCode.trim()) return;
+    if (!token) {
+      alert('登录状态异常，请刷新页面后重试');
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch('/api/enterprises/join', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-session': token || '' },
+        headers: { 'Content-Type': 'application/json', 'x-session': token },
         body: JSON.stringify({ invite_code: joinCode.trim() }),
       });
       const data = await res.json();
@@ -113,11 +117,15 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOp
 
   const handleCreateEnterprise = async () => {
     if (!newEnterpriseName.trim()) return;
+    if (!token) {
+      alert('登录状态异常，请刷新页面后重试');
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch('/api/enterprises', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-session': token || '' },
+        headers: { 'Content-Type': 'application/json', 'x-session': token },
         body: JSON.stringify({ name: newEnterpriseName.trim() }),
       });
       const data = await res.json();
@@ -207,18 +215,27 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOp
               ))}
 
               <div className="border-t border-white/10">
-                <button
-                  onClick={() => { setShowJoinDialog(true); setShowEnterpriseDropdown(false); }}
-                  className="w-full text-left px-3 py-2 text-sm text-cyan-400 hover:bg-white/10"
-                >
-                  + 加入企业
-                </button>
-                <button
-                  onClick={() => { setShowCreateDialog(true); setShowEnterpriseDropdown(false); }}
-                  className="w-full text-left px-3 py-2 text-sm text-cyan-400 hover:bg-white/10"
-                >
-                  + 创建企业
-                </button>
+                {token && (
+                  <>
+                    <button
+                      onClick={() => { setShowJoinDialog(true); setShowEnterpriseDropdown(false); }}
+                      className="w-full text-left px-3 py-2 text-sm text-cyan-400 hover:bg-white/10"
+                    >
+                      + 加入企业
+                    </button>
+                    <button
+                      onClick={() => { setShowCreateDialog(true); setShowEnterpriseDropdown(false); }}
+                      className="w-full text-left px-3 py-2 text-sm text-cyan-400 hover:bg-white/10"
+                    >
+                      + 创建企业
+                    </button>
+                  </>
+                )}
+                {!token && (
+                  <div className="px-3 py-2 text-xs text-slate-400">
+                    登录后可创建或加入企业
+                  </div>
+                )}
               </div>
             </div>
           )}
