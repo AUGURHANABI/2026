@@ -9,6 +9,7 @@ import {
   removeEnterpriseMember,
   DeveloperEnterprise,
 } from '@/lib/api';
+import { useDataSync } from '@/hooks/use-data-sync';
 
 interface Member {
   id: string;
@@ -38,6 +39,8 @@ export default function DeveloperDashboard() {
   // Member removal
   const [removingMember, setRemovingMember] = useState<{ enterpriseId: string; userId: string; email: string } | null>(null);
 
+  const { syncKey } = useDataSync();
+
   const loadEnterprises = useCallback(async () => {
     try {
       const result = await fetchDeveloperEnterprises();
@@ -51,7 +54,7 @@ export default function DeveloperDashboard() {
 
   useEffect(() => {
     loadEnterprises();
-  }, [loadEnterprises]);
+  }, [loadEnterprises, syncKey]);
 
   const loadMembers = async (enterpriseId: string) => {
     setMembersLoading(true);

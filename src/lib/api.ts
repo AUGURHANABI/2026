@@ -29,7 +29,10 @@ async function authFetch(url: string, options: RequestInit = {}): Promise<Respon
   if (enterpriseId) {
     headers.set('x-enterprise-id', enterpriseId);
   }
-  return fetch(url, { ...options, headers });
+  // GET 请求显式禁用缓存，避免移动端浏览器命中启发式缓存返回旧数据
+  const method = (options.method || 'GET').toUpperCase();
+  const cache = method === 'GET' ? 'no-store' : options.cache;
+  return fetch(url, { ...options, headers, cache });
 }
 
 export async function fetchCategories() {
