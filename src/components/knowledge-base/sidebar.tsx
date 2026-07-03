@@ -2,7 +2,6 @@
 
 import { useAuth } from '@/lib/auth-context';
 import { useState, useEffect } from 'react';
-import { getSessionToken } from '@/lib/api';
 
 interface Enterprise {
   enterprise_id: string;
@@ -32,7 +31,7 @@ const adminNavItem = { id: 'permissions' as const, label: '权限设置', icon: 
 const developerNavItem = { id: 'developer' as const, label: '开发者管理', icon: '⚙️' };
 
 export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOpen, onMobileClose }: SidebarProps) {
-  const { user, signOut } = useAuth();
+  const { user, session, signOut } = useAuth();
   const [enterprises, setEnterprises] = useState<Enterprise[]>([]);
   const [currentEnterprise, setCurrentEnterprise] = useState<Enterprise | null>(null);
   const [showEnterpriseDropdown, setShowEnterpriseDropdown] = useState(false);
@@ -43,17 +42,17 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOp
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (user) {
+    if (user && session?.access_token) {
       loadEnterprises();
     }
-  }, [user]);
+  }, [user, session?.access_token]);
 
   const loadEnterprises = async () => {
-    const sessionToken = await getSessionToken();
-    if (!sessionToken) return;
+    const token = session?.access_token;
+    if (!token) return;
     try {
       const res = await fetch('/api/enterprises', {
-        headers: { 'x-session': sessionToken },
+        headers: { 'x-session': token },
       });
       const data = await res.json();
       if (data.data) {
@@ -83,8 +82,8 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOp
 
   const handleJoinEnterprise = async () => {
     if (!joinCode.trim()) return;
-    const sessionToken = await getSessionToken();
-    if (!sessionToken) {
+    const token = session?.access_token;
+    if (!token) {
       alert('登录状态异常，请刷新页面后重试');
       return;
     }
@@ -92,7 +91,7 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOp
     try {
       const res = await fetch('/api/enterprises/join', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-session': sessionToken },
+        headers: { 'Content-Type': 'application/json', 'x-session': token },
         body: JSON.stringify({ invite_code: joinCode.trim() }),
       });
       const data = await res.json();
@@ -121,8 +120,8 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOp
 
   const handleCreateEnterprise = async () => {
     if (!newEnterpriseName.trim()) return;
-    const sessionToken = await getSessionToken();
-    if (!sessionToken) {
+    const token = session?.access_token;
+    if (!token) {
       alert('登录状态异常，请刷新页面后重试');
       return;
     }
@@ -130,7 +129,7 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOp
     try {
       const res = await fetch('/api/enterprises', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-session': sessionToken },
+        headers: { 'Content-Type': 'application/json', 'x-session': token },
         body: JSON.stringify({ name: newEnterpriseName.trim() }),
       });
       const data = await res.json();
