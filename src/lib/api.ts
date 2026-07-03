@@ -1,7 +1,7 @@
 const API_BASE = '/api';
 
 /** Get session token from Supabase for authenticated API calls */
-async function getSessionToken(): Promise<string | null> {
+export async function getSessionToken(): Promise<string | null> {
   try {
     const { getSupabaseBrowserClientWithRetry } = await import('@/lib/supabase-browser');
     const supabase = await getSupabaseBrowserClientWithRetry();
