@@ -4,7 +4,6 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { SupabaseClient, User, Session } from '@supabase/supabase-js';
 import { useSupabaseConfig } from './supabase-config-inject';
 import { getSupabaseBrowserClientAsync } from './supabase-browser';
-import { resetSessionPromise } from './api';
 
 interface Enterprise {
   enterprise_id: string;
@@ -21,6 +20,8 @@ interface AuthContextType {
   currentEnterpriseId: string | null;
   setCurrentEnterpriseId: (id: string | null) => void;
   signOut: () => Promise<void>;
+  /** Wait for session to be ready (returns token or null) */
+  waitForSession: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -31,6 +32,7 @@ const AuthContext = createContext<AuthContextType>({
   currentEnterpriseId: null,
   setCurrentEnterpriseId: () => {},
   signOut: async () => {},
+  waitForSession: async () => null,
 });
 
 export function useAuth() {
@@ -39,6 +41,29 @@ export function useAuth() {
 
 interface AuthProviderProps {
   children: ReactNode;
+}
+
+// Global session promise - set by auth-context, consumed by api.ts
+let sessionReadyResolve: ((token: string | null) => void) | null = null;
+let sessionReadyPromise: Promise<string | null> = new Promise((resolve) => {
+  sessionReadyResolve = resolve;
+});
+
+/** Called by api.ts to wait for session */
+export async function waitForSessionToken(): Promise<string | null> {
+  return sessionReadyPromise;
+}
+
+/** Called by auth-context when session state changes */
+export function notifySessionReady(token: string | null) {
+  // Create new promise for next session change
+  sessionReadyPromise = new Promise((resolve) => {
+    sessionReadyResolve = resolve;
+  });
+  // Resolve the current promise
+  if (sessionReadyResolve) {
+    sessionReadyResolve(token);
+  }
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
@@ -66,6 +91,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       .catch((err) => {
         console.error('Failed to get Supabase client:', err);
         setIsLoading(false);
+        notifySessionReady(null);
       });
   }, [config]);
 
@@ -77,6 +103,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
+      // Notify api.ts that session is ready
+      notifySessionReady(currentSession?.access_token ?? null);
       if (currentSession?.user) {
         loadEnterprises(currentSession.access_token);
       } else {
@@ -85,13 +113,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }).catch((err) => {
       console.error('Failed to get session:', err);
       setIsLoading(false);
+      notifySessionReady(null);
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, newSession) => {
-        // Reset cached session promise so api.ts fetches fresh token
-        resetSessionPromise();
+        notifySessionReady(newSession?.access_token ?? null);
         setSession(newSession);
         setUser(newSession?.user ?? null);
         if (newSession?.user) {
@@ -136,7 +164,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.error('Failed to load enterprises:', err);
     } finally {
       setIsLoading(false);
-    }
+      }
   };
 
   const signOut = async () => {
@@ -145,6 +173,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     localStorage.removeItem('current_enterprise_id');
     setCurrentEnterpriseId(null);
     setEnterprises([]);
+    };
+
+  const waitForSession = async (): Promise<string | null> => {
+    return waitForSessionToken();
   };
 
   return (
@@ -161,6 +193,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           else localStorage.removeItem('current_enterprise_id');
         },
         signOut,
+        waitForSession,
       }}
     >
       {children}
