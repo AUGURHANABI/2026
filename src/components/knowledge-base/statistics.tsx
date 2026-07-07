@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { fetchStatistics } from '@/lib/api';
-import { useDataSync } from '@/hooks/use-data-sync';
 
 interface OverviewData {
   total_entries: number;
@@ -40,7 +39,6 @@ export function Statistics() {
   const [effectiveness, setEffectiveness] = useState<EffectivenessData | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'effectiveness'>('overview');
-  const { syncKey } = useDataSync();
 
   useEffect(() => {
     async function loadStats() {
@@ -59,7 +57,7 @@ export function Statistics() {
       }
     }
     loadStats();
-  }, [syncKey]);
+  }, []);
 
   if (loading) {
     return (

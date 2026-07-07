@@ -8,7 +8,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { usePermissions } from '@/lib/permission-context';
-import { useDataSync } from '@/hooks/use-data-sync';
 import {
   fetchCategories,
   createCategory,
@@ -19,7 +18,6 @@ import {
 
 export function CategoryManager() {
   const { hasPermission } = usePermissions();
-  const { syncKey } = useDataSync();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
@@ -42,7 +40,7 @@ export function CategoryManager() {
 
   useEffect(() => {
     loadCategories();
-  }, [loadCategories, syncKey]);
+  }, [loadCategories]);
 
   const handleSave = async () => {
     if (!formName.trim()) return;

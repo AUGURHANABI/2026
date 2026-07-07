@@ -13,7 +13,6 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { useRef } from 'react';
 import { usePermissions } from '@/lib/permission-context';
-import { useDataSync } from '@/hooks/use-data-sync';
 import {
   fetchKnowledge,
   fetchCategories,
@@ -41,7 +40,6 @@ import {
 
 export function KnowledgeList() {
   const { hasPermission } = usePermissions();
-  const { syncKey } = useDataSync();
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
   const [expandedQuestion, setExpandedQuestion] = useState<string>('');
 
@@ -159,7 +157,7 @@ export function KnowledgeList() {
 
   useEffect(() => {
     loadData();
-  }, [loadData, syncKey]);
+  }, [loadData]);
 
   const handleCreate = async () => {
     try {

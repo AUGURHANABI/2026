@@ -46,12 +46,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [enterprises, setEnterprises] = useState<Enterprise[]>([]);
-  const [currentEnterpriseId, setCurrentEnterpriseId] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('current_enterprise_id');
-    }
-    return null;
-  });
+  const [currentEnterpriseId, setCurrentEnterpriseId] = useState<string | null>(null);
 
   // Step 1: Create Supabase client when config is ready
   useEffect(() => {
@@ -126,11 +121,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
           const firstId = data[0].enterprise_id;
           setCurrentEnterpriseId(firstId);
           localStorage.setItem('current_enterprise_id', firstId);
-        }
-
-        // Notify other components (e.g. PermissionProvider) that enterprise data is available
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new Event('enterprise-changed'));
         }
       }
     } catch (err) {
