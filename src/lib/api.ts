@@ -642,12 +642,12 @@ export async function fetchQuotationById(id: string): Promise<{ data: ProductQuo
 export async function createQuotation(data: {
   product_code: string;
   product_name: string;
-  specifications?: string;
-  packaging_info?: string;
-  weight?: number;
-  dimensions?: string;
-  box_specs?: string;
-  remarks_text?: string;
+  specifications?: string | null;
+  packaging_info?: string | null;
+  weight?: number | null;
+  dimensions?: string | null;
+  box_specs?: string | null;
+  remarks_text?: string | null;
   remarks_images?: string[];
   remarks_attachments?: string[];
   price_ranges: PriceRange[];
@@ -667,12 +667,12 @@ export async function createQuotation(data: {
 export async function updateQuotation(id: string, data: {
   product_code: string;
   product_name: string;
-  specifications?: string;
-  packaging_info?: string;
-  weight?: number;
-  dimensions?: string;
-  box_specs?: string;
-  remarks_text?: string;
+  specifications?: string | null;
+  packaging_info?: string | null;
+  weight?: number | null;
+  dimensions?: string | null;
+  box_specs?: string | null;
+  remarks_text?: string | null;
   remarks_images?: string[];
   remarks_attachments?: string[];
   price_ranges: PriceRange[];

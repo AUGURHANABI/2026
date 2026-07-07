@@ -1,321 +1,234 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { usePermissions } from '@/lib/permission-context';
-import {
-  fetchQuotations,
-  createQuotation,
-  updateQuotation,
-  deleteQuotation,
+import { 
+  fetchQuotations, 
+  createQuotation, 
+  updateQuotation, 
+  deleteQuotation, 
   batchDeleteQuotations,
-  downloadQuotationTemplate,
-  importQuotations,
+  downloadQuotationTemplate, 
+  importQuotations, 
   exportQuotations,
   ProductQuotation,
-  PriceRange,
+  PriceRange
 } from '@/lib/api';
 
-// 价格区间编辑器组件
-function PriceRangesEditor({
-  ranges,
-  onChange,
-}: {
-  ranges: PriceRange[];
-  onChange: (ranges: PriceRange[]) => void;
+function PriceRangesEditor({ ranges, onChange, readOnly = false }: { 
+  ranges: PriceRange[]; 
+  onChange: (ranges: PriceRange[]) => void; 
+  readOnly?: boolean 
 }) {
   const addRange = () => {
-    const lastMax = ranges.length > 0 ? ranges[ranges.length - 1].max_quantity || 1000 : 0;
-    onChange([
-      ...ranges,
-      {
-        min_quantity: lastMax + 1,
-        max_quantity: null,
-        price: 0,
-        unit: 'CNY',
-      },
-    ]);
+    if (readOnly) return;
+    const lastRange = ranges[ranges.length - 1];
+    const newMin = lastRange ? (lastRange.max_quantity || lastRange.min_quantity + 1000) + 1 : 1;
+    onChange([...ranges, { min_quantity: newMin, max_quantity: null, price: 0, unit: 'CNY' }]);
   };
 
   const removeRange = (index: number) => {
+    if (readOnly) return;
     onChange(ranges.filter((_, i) => i !== index));
   };
 
-  const updateRange = (index: number, field: keyof PriceRange, value: number | string | null) => {
-    const updated = [...ranges];
-    updated[index] = { ...updated[index], [field]: value };
-    onChange(updated);
+  const updateRange = (index: number, field: keyof PriceRange, value: string | number) => {
+    if (readOnly) return;
+    const newRanges = [...ranges];
+    if (field === 'min_quantity' || field === 'max_quantity' || field === 'price') {
+      newRanges[index] = { ...newRanges[index], [field]: value === '' ? undefined : Number(value) };
+    } else {
+      newRanges[index] = { ...newRanges[index], [field]: value };
+    }
+    onChange(newRanges);
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-medium">数量区间价格</label>
-        <button
-          type="button"
-          onClick={addRange}
-          className="text-xs px-2 py-1 bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors"
-        >
-          + 添加区间
-        </button>
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+        <span className="w-20">最小数量</span>
+        <span className="w-20">最大数量</span>
+        <span className="w-24">价格</span>
+        <span className="w-16">货币</span>
+        {!readOnly && <span className="w-10"></span>}
       </div>
-
-      {ranges.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-2">暂无价格区间，点击上方按钮添加</p>
-      ) : (
-        <div className="space-y-2">
-          {ranges.map((range, index) => (
-            <div key={index} className="flex items-center gap-2 p-2 bg-muted/50 rounded-md">
-              <div className="flex items-center gap-1 flex-1">
-                <input
-                  type="number"
-                  value={range.min_quantity}
-                  onChange={(e) => updateRange(index, 'min_quantity', parseInt(e.target.value) || 1)}
-                  className="w-16 px-2 py-1 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary/30"
-                  placeholder="最小"
-                  min="1"
-                />
-                <span className="text-muted-foreground">-</span>
-                <input
-                  type="number"
-                  value={range.max_quantity || ''}
-                  onChange={(e) => updateRange(index, 'max_quantity', e.target.value ? parseInt(e.target.value) : null)}
-                  className="w-16 px-2 py-1 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary/30"
-                  placeholder="最大"
-                  min={range.min_quantity + 1}
-                />
-                <span className="text-muted-foreground text-xs">件</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  value={range.price}
-                  onChange={(e) => updateRange(index, 'price', parseFloat(e.target.value) || 0)}
-                  className="w-20 px-2 py-1 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary/30"
-                  placeholder="价格"
-                  min="0"
-                  step="0.01"
-                />
-                <select
-                  value={range.unit}
-                  onChange={(e) => updateRange(index, 'unit', e.target.value)}
-                  className="px-2 py-1 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary/30"
-                >
-                  <option value="CNY">CNY</option>
-                  <option value="USD">USD</option>
-                  <option value="EUR">EUR</option>
-                </select>
-              </div>
-              <button
-                type="button"
-                onClick={() => removeRange(index)}
-                className="text-destructive hover:text-destructive/80 text-xs"
-              >
-                删除
-              </button>
-            </div>
-          ))}
+      {ranges.map((range, index) => (
+        <div key={index} className="flex items-center gap-2">
+          <Input
+            type="number"
+            className="w-20"
+            value={range.min_quantity}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRange(index, 'min_quantity', e.target.value)}
+            disabled={readOnly}
+          />
+          <Input
+            type="number"
+            className="w-20"
+            value={range.max_quantity ?? ''}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRange(index, 'max_quantity', e.target.value)}
+            placeholder="不限"
+            disabled={readOnly}
+          />
+          <Input
+            type="number"
+            className="w-24"
+            value={range.price}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRange(index, 'price', e.target.value)}
+            disabled={readOnly}
+          />
+          <Input
+            className="w-16"
+            value={range.unit || 'CNY'}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRange(index, 'unit', e.target.value)}
+            disabled={readOnly}
+          />
+          {!readOnly && (
+            <Button variant="ghost" size="sm" onClick={() => removeRange(index)} className="w-10 text-destructive">
+              ×
+            </Button>
+          )}
         </div>
+      ))}
+      {!readOnly && (
+        <Button variant="outline" size="sm" onClick={addRange} className="mt-2">
+          + 添加区间
+        </Button>
       )}
     </div>
   );
 }
 
-// 备注编辑器组件（文字+图片+附件）
-function RemarksEditor({
-  text,
-  images,
-  attachments,
-  onTextChange,
-  onImagesChange,
-  onAttachmentsChange,
-}: {
+function RemarksEditor({ text, images, attachments, onChange, readOnly = false }: {
   text: string;
   images: string[];
   attachments: string[];
-  onTextChange: (text: string) => void;
-  onImagesChange: (images: string[]) => void;
-  onAttachmentsChange: (attachments: string[]) => void;
+  onChange: (data: { text: string; images: string[]; attachments: string[] }) => void;
+  readOnly?: boolean;
 }) {
-  const [imageUrls, setImageUrls] = useState<string[]>(images);
-  const [attachmentUrls, setAttachmentUrls] = useState<string[]>(attachments);
-
-  // 添加图片 URL
-  const addImageUrl = () => {
-    const url = prompt('请输入图片URL');
-    if (url && url.trim()) {
-      const newUrls = [...imageUrls, url.trim()];
-      setImageUrls(newUrls);
-      onImagesChange(newUrls);
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly || !e.target.files) return;
+    const files = Array.from(e.target.files);
+    const urls: string[] = [];
+    for (const file of files) {
+      urls.push(`pending:${file.name}`);
     }
+    onChange({ text, images: [...images, ...urls], attachments });
   };
 
-  // 删除图片
+  const handleAttachmentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (readOnly || !e.target.files) return;
+    const files = Array.from(e.target.files);
+    const urls: string[] = [];
+    for (const file of files) {
+      urls.push(`pending:${file.name}`);
+    }
+    onChange({ text, images, attachments: [...attachments, ...urls] });
+  };
+
   const removeImage = (index: number) => {
-    const newUrls = imageUrls.filter((_, i) => i !== index);
-    setImageUrls(newUrls);
-    onImagesChange(newUrls);
+    if (readOnly) return;
+    onChange({ text, images: images.filter((_, i) => i !== index), attachments });
   };
 
-  // 添加附件 URL
-  const addAttachmentUrl = () => {
-    const url = prompt('请输入附件URL（如PDF、Excel等）');
-    if (url && url.trim()) {
-      const newUrls = [...attachmentUrls, url.trim()];
-      setAttachmentUrls(newUrls);
-      onAttachmentsChange(newUrls);
-    }
-  };
-
-  // 删除附件
   const removeAttachment = (index: number) => {
-    const newUrls = attachmentUrls.filter((_, i) => i !== index);
-    setAttachmentUrls(newUrls);
-    onAttachmentsChange(newUrls);
+    if (readOnly) return;
+    onChange({ text, images, attachments: attachments.filter((_, i) => i !== index) });
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div>
-        <label className="text-sm font-medium mb-2 block">备注文字</label>
+        <label className="text-sm font-medium mb-1 block">备注文字</label>
         <textarea
+          className="w-full min-h-[80px] p-2 border rounded-md resize-y text-sm bg-background"
           value={text}
-          onChange={(e) => onTextChange(e.target.value)}
-          rows={3}
-          className="w-full px-3 py-2 border border-border rounded-md bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary/30 resize-none"
-          placeholder="输入备注内容..."
+          onChange={(e) => onChange({ text: e.target.value, images, attachments })}
+          placeholder="输入备注信息..."
+          disabled={readOnly}
         />
       </div>
-
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-sm font-medium">备注图片</label>
-          <button
-            type="button"
-            onClick={addImageUrl}
-            className="text-xs px-2 py-1 bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors"
-          >
-            + 添加图片
-          </button>
+        <label className="text-sm font-medium mb-1 block">备注图片</label>
+        <div className="flex gap-2 flex-wrap">
+          {images.map((url, i) => (
+            <div key={i} className="relative w-16 h-16 border rounded overflow-hidden bg-muted">
+              <img src={url} className="w-full h-full object-cover" alt="备注图片" />
+              {!readOnly && (
+                <button onClick={() => removeImage(i)} className="absolute top-0 right-0 w-5 h-5 bg-destructive text-white rounded-bl text-xs">×</button>
+              )}
+            </div>
+          ))}
+          {!readOnly && (
+            <label className="w-16 h-16 border rounded flex items-center justify-center cursor-pointer hover:bg-muted/50">
+              <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
+              <span className="text-muted-foreground text-xl">+</span>
+            </label>
+          )}
         </div>
-        {imageUrls.length > 0 ? (
-          <div className="grid grid-cols-4 gap-2">
-            {imageUrls.map((url, index) => (
-              <div key={index} className="relative group">
-                <img
-                  src={url}
-                  alt={`图片${index + 1}`}
-                  className="w-full h-20 object-cover rounded border border-border"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = '/placeholder.png';
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => removeImage(index)}
-                  className="absolute top-1 right-1 bg-destructive text-white rounded-full w-4 h-4 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">暂无图片</p>
-        )}
       </div>
-
       <div>
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-sm font-medium">备注附件</label>
-          <button
-            type="button"
-            onClick={addAttachmentUrl}
-            className="text-xs px-2 py-1 bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors"
-          >
-            + 添加附件
-          </button>
+        <label className="text-sm font-medium mb-1 block">备注附件</label>
+        <div className="flex gap-2 flex-wrap">
+          {attachments.map((url, i) => (
+            <div key={i} className="flex items-center gap-1 px-2 py-1 border rounded bg-muted">
+              <span className="text-sm truncate max-w-[120px]">{url.replace('pending:', '')}</span>
+              {!readOnly && <button onClick={() => removeAttachment(i)} className="text-destructive text-xs">×</button>}
+            </div>
+          ))}
+          {!readOnly && (
+            <label className="px-2 py-1 border rounded cursor-pointer hover:bg-muted/50">
+              <input type="file" multiple className="hidden" onChange={handleAttachmentUpload} />
+              <span className="text-sm text-muted-foreground">+ 添加附件</span>
+            </label>
+          )}
         </div>
-        {attachmentUrls.length > 0 ? (
-          <div className="space-y-1">
-            {attachmentUrls.map((url, index) => (
-              <div key={index} className="flex items-center gap-2 p-2 bg-muted/50 rounded group">
-                <svg className="w-4 h-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <a href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline truncate flex-1">
-                  {url.split('/').pop() || url}
-                </a>
-                <button
-                  type="button"
-                  onClick={() => removeAttachment(index)}
-                  className="text-destructive hover:text-destructive/80 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  删除
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">暂无附件</p>
-        )}
       </div>
     </div>
   );
 }
 
-// 报价详情对话框
-function QuotationDialog({
-  quotation,
-  isOpen,
-  onClose,
-  onSave,
-}: {
-  quotation: ProductQuotation | null;
+function QuotationDialog({ isOpen, quotation, onClose, onSave, readOnly = false }: {
   isOpen: boolean;
+  quotation: ProductQuotation | null;
   onClose: () => void;
-  onSave: (data: {
-    product_code: string;
-    product_name: string;
-    specifications?: string;
-    packaging_info?: string;
-    weight?: number;
-    dimensions?: string;
-    box_specs?: string;
-    remarks_text?: string;
-    remarks_images?: string[];
-    remarks_attachments?: string[];
-    price_ranges: PriceRange[];
-  }) => void;
+  onSave: (data: Partial<ProductQuotation>) => void;
+  readOnly?: boolean;
 }) {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<Partial<ProductQuotation>>({
     product_code: '',
     product_name: '',
     specifications: '',
     packaging_info: '',
-    weight: '',
+    weight: undefined,
     dimensions: '',
     box_specs: '',
     remarks_text: '',
-    remarks_images: [] as string[],
-    remarks_attachments: [] as string[],
-    price_ranges: [] as PriceRange[],
+    remarks_images: [],
+    remarks_attachments: [],
+    price_ranges: [{ min_quantity: 1, max_quantity: null, price: 0, unit: 'CNY' }],
   });
-  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (quotation) {
       setFormData({
-        product_code: quotation.product_code,
-        product_name: quotation.product_name,
+        product_code: quotation.product_code || '',
+        product_name: quotation.product_name || '',
         specifications: quotation.specifications || '',
         packaging_info: quotation.packaging_info || '',
-        weight: quotation.weight?.toString() || '',
+        weight: quotation.weight,
         dimensions: quotation.dimensions || '',
         box_specs: quotation.box_specs || '',
         remarks_text: quotation.remarks_text || '',
         remarks_images: quotation.remarks_images || [],
         remarks_attachments: quotation.remarks_attachments || [],
-        price_ranges: quotation.price_ranges || [],
+        price_ranges: quotation.price_ranges && quotation.price_ranges.length > 0 
+          ? quotation.price_ranges 
+          : [{ min_quantity: 1, max_quantity: null, price: 0, unit: 'CNY' }],
       });
     } else {
       setFormData({
@@ -323,7 +236,7 @@ function QuotationDialog({
         product_name: '',
         specifications: '',
         packaging_info: '',
-        weight: '',
+        weight: undefined,
         dimensions: '',
         box_specs: '',
         remarks_text: '',
@@ -332,176 +245,114 @@ function QuotationDialog({
         price_ranges: [{ min_quantity: 1, max_quantity: null, price: 0, unit: 'CNY' }],
       });
     }
-  }, [quotation, isOpen]);
-
-  const handleSave = async () => {
-    if (!formData.product_code || !formData.product_name) {
-      alert('产品货号和产品名称为必填项');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await onSave({
-        product_code: formData.product_code,
-        product_name: formData.product_name,
-        specifications: formData.specifications || undefined,
-        packaging_info: formData.packaging_info || undefined,
-        weight: formData.weight ? parseFloat(formData.weight) : undefined,
-        dimensions: formData.dimensions || undefined,
-        box_specs: formData.box_specs || undefined,
-        remarks_text: formData.remarks_text || undefined,
-        remarks_images: formData.remarks_images,
-        remarks_attachments: formData.remarks_attachments,
-        price_ranges: formData.price_ranges,
-      });
-      onClose();
-    } finally {
-      setSaving(false);
-    }
-  };
+  }, [quotation]);
 
   if (!isOpen) return null;
 
+  const handleSaveClick = () => {
+    if (!formData.product_code || !formData.product_name) {
+      alert('请填写产品货号和产品名称');
+      return;
+    }
+    onSave(formData);
+  };
+
+  const title = readOnly ? '查看报价详情' : (quotation ? '编辑报价' : '新建报价');
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-background rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-          <h2 className="text-lg font-semibold">
-            {quotation ? '编辑报价' : '新增报价'}
-          </h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="p-6 space-y-4 overflow-y-auto max-h-[calc(90vh-120px)]">
-          {/* 基本信息 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium mb-1 block">
-                产品货号 <span className="text-destructive">*</span>
-              </label>
-              <input
-                type="text"
+              <label className="text-sm font-medium mb-1 block">产品货号 *</label>
+              <Input
                 value={formData.product_code}
-                onChange={(e) => setFormData({ ...formData, product_code: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary/30"
-                placeholder="SKU001"
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, product_code: e.target.value })}
+                disabled={readOnly}
               />
             </div>
             <div>
-              <label className="text-sm font-medium mb-1 block">
-                产品名称 <span className="text-destructive">*</span>
-              </label>
-              <input
-                type="text"
+              <label className="text-sm font-medium mb-1 block">产品名称 *</label>
+              <Input
                 value={formData.product_name}
-                onChange={(e) => setFormData({ ...formData, product_name: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary/30"
-                placeholder="硅胶密封圈"
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, product_name: e.target.value })}
+                disabled={readOnly}
               />
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium mb-1 block">产品规格</label>
-              <input
-                type="text"
-                value={formData.specifications}
-                onChange={(e) => setFormData({ ...formData, specifications: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary/30"
-                placeholder="直径50mm，厚度3mm"
+              <Input
+                value={formData.specifications ?? ''}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, specifications: e.target.value })}
+                disabled={readOnly}
               />
             </div>
             <div>
               <label className="text-sm font-medium mb-1 block">包装信息</label>
-              <input
-                type="text"
-                value={formData.packaging_info}
-                onChange={(e) => setFormData({ ...formData, packaging_info: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary/30"
-                placeholder="PE袋包装"
+              <Input
+                value={formData.packaging_info ?? ''}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, packaging_info: e.target.value })}
+                disabled={readOnly}
               />
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="text-sm font-medium mb-1 block">重量(kg)</label>
-              <input
+              <Input
                 type="number"
-                value={formData.weight}
-                onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary/30"
-                placeholder="0.05"
-                min="0"
-                step="0.001"
+                value={formData.weight ?? ''}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, weight: e.target.value ? Number(e.target.value) : undefined })}
+                disabled={readOnly}
               />
             </div>
             <div>
               <label className="text-sm font-medium mb-1 block">尺寸</label>
-              <input
-                type="text"
-                value={formData.dimensions}
-                onChange={(e) => setFormData({ ...formData, dimensions: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary/30"
-                placeholder="50x50x3mm"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1 block">箱规</label>
-              <input
-                type="text"
-                value={formData.box_specs}
-                onChange={(e) => setFormData({ ...formData, box_specs: e.target.value })}
-                className="w-full px-3 py-2 border border-border rounded-md bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary/30"
-                placeholder="100个/箱"
+              <Input
+                value={formData.dimensions ?? ''}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, dimensions: e.target.value })}
+                disabled={readOnly}
               />
             </div>
           </div>
-
-          {/* 价格区间 */}
-          <PriceRangesEditor
-            ranges={formData.price_ranges}
-            onChange={(ranges) => setFormData({ ...formData, price_ranges: ranges })}
-          />
-
-          {/* 备注 */}
-          <RemarksEditor
-            text={formData.remarks_text}
-            images={formData.remarks_images}
-            attachments={formData.remarks_attachments}
-            onTextChange={(text) => setFormData({ ...formData, remarks_text: text })}
-            onImagesChange={(images) => setFormData({ ...formData, remarks_images: images })}
-            onAttachmentsChange={(attachments) => setFormData({ ...formData, remarks_attachments: attachments })}
-          />
+          <div>
+            <label className="text-sm font-medium mb-1 block">箱规信息</label>
+            <Input
+              value={formData.box_specs ?? ''}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, box_specs: e.target.value })}
+              disabled={readOnly}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-2 block">数量区间价格</label>
+            <PriceRangesEditor
+              ranges={formData.price_ranges || []}
+              onChange={(ranges) => setFormData({ ...formData, price_ranges: ranges })}
+              readOnly={readOnly}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-2 block">备注信息</label>
+            <RemarksEditor
+              text={formData.remarks_text || ''}
+              images={formData.remarks_images || []}
+              attachments={formData.remarks_attachments || []}
+              onChange={(data) => setFormData({ ...formData, remarks_text: data.text, remarks_images: data.images, remarks_attachments: data.attachments })}
+              readOnly={readOnly}
+            />
+          </div>
         </div>
-
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            取消
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
-          >
-            {saving ? '保存中...' : '保存'}
-          </button>
-        </div>
-      </div>
-    </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>{readOnly ? '关闭' : '取消'}</Button>
+          {!readOnly && <Button onClick={handleSaveClick}>保存</Button>}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-// 主组件
 export default function QuotationList() {
   const { hasPermission } = usePermissions();
   const [quotations, setQuotations] = useState<ProductQuotation[]>([]);
@@ -510,12 +361,14 @@ export default function QuotationList() {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-
+  const [totalPages, setTotalPages] = useState(0);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingQuotation, setEditingQuotation] = useState<ProductQuotation | null>(null);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [importing, setImporting] = useState(false);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [viewingQuotation, setViewingQuotation] = useState<ProductQuotation | null>(null);
+  const [groupByProductName, setGroupByProductName] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const canCreate = hasPermission('quotation:create');
@@ -523,6 +376,24 @@ export default function QuotationList() {
   const canDelete = hasPermission('quotation:delete');
   const canImport = hasPermission('quotation:import');
   const canExport = hasPermission('quotation:export');
+
+  // 按产品名称分组
+  const groupedProducts = useMemo(() => {
+    if (!groupByProductName) return [];
+    const groups = new Map<string, ProductQuotation[]>();
+    quotations.forEach(q => {
+      const name = q.product_name;
+      if (!groups.has(name)) groups.set(name, []);
+      groups.get(name)!.push(q);
+    });
+    return Array.from(groups.entries()).map(([productName, items]) => ({ productName, items }));
+  }, [quotations, groupByProductName]);
+
+  const toggleGroupExpand = useCallback((productName: string) => {
+    setExpandedGroups(prev => 
+      prev.includes(productName) ? prev.filter(g => g !== productName) : [...prev, productName]
+    );
+  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -532,260 +403,228 @@ export default function QuotationList() {
       setTotal(result.total);
       setTotalPages(result.totalPages);
     } catch (err) {
-      console.error('Failed to load quotations:', err);
+      console.error('加载报价失败:', err);
     } finally {
       setLoading(false);
     }
   }, [search, page, pageSize]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData]);
 
-  const handleCreate = () => {
-    setEditingQuotation(null);
-    setDialogOpen(true);
-  };
+  const handleCreate = () => { setEditingQuotation(null); setDialogOpen(true); };
+  const handleEdit = (q: ProductQuotation) => { setEditingQuotation(q); setDialogOpen(true); };
+  const handleView = (q: ProductQuotation) => { setViewingQuotation(q); setViewDialogOpen(true); };
+  const handleRowClick = (q: ProductQuotation) => { handleView(q); };
 
-  const handleEdit = (quotation: ProductQuotation) => {
-    setEditingQuotation(quotation);
-    setDialogOpen(true);
-  };
-
-  const handleSave = async (data: {
-    product_code: string;
-    product_name: string;
-    specifications?: string;
-    packaging_info?: string;
-    weight?: number;
-    dimensions?: string;
-    box_specs?: string;
-    remarks_text?: string;
-    remarks_images?: string[];
-    remarks_attachments?: string[];
-    price_ranges: PriceRange[];
-  }) => {
-    if (editingQuotation) {
-      await updateQuotation(editingQuotation.id, data);
-    } else {
-      await createQuotation(data);
+  const handleSave = async (data: Partial<ProductQuotation>) => {
+    try {
+      if (editingQuotation) {
+        // 编辑时确保必填字段存在
+        const updateData = {
+          product_code: data.product_code || editingQuotation.product_code,
+          product_name: data.product_name || editingQuotation.product_name,
+          price_ranges: data.price_ranges || editingQuotation.price_ranges,
+          specifications: data.specifications,
+          packaging_info: data.packaging_info,
+          weight: data.weight,
+          dimensions: data.dimensions,
+          box_specs: data.box_specs,
+          remarks_text: data.remarks_text,
+          remarks_images: data.remarks_images,
+          remarks_attachments: data.remarks_attachments,
+        };
+        await updateQuotation(editingQuotation.id, updateData);
+      } else {
+        // 创建时需要所有必填字段
+        const createData = {
+          product_code: data.product_code!,
+          product_name: data.product_name!,
+          price_ranges: data.price_ranges!,
+          specifications: data.specifications,
+          packaging_info: data.packaging_info,
+          weight: data.weight,
+          dimensions: data.dimensions,
+          box_specs: data.box_specs,
+          remarks_text: data.remarks_text,
+          remarks_images: data.remarks_images,
+          remarks_attachments: data.remarks_attachments,
+        };
+        await createQuotation(createData);
+      }
+      setDialogOpen(false);
+      loadData();
+    } catch (err) {
+      console.error('保存失败:', err);
+      alert('保存失败');
     }
-    loadData();
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('确定要删除此报价吗？')) return;
-    await deleteQuotation(id);
-    loadData();
-  };
-
-  const handleBatchDelete = async () => {
+  const handleDelete = async () => {
     if (selectedIds.length === 0) return;
-    if (!confirm(`确定要删除选中的 ${selectedIds.length} 条报价吗？`)) return;
-    await batchDeleteQuotations(selectedIds);
-    setSelectedIds([]);
-    loadData();
+    if (!confirm(`确定删除 ${selectedIds.length} 条报价？`)) return;
+    try {
+      await batchDeleteQuotations(selectedIds);
+      setSelectedIds([]);
+      loadData();
+    } catch (err) {
+      console.error('删除失败:', err);
+      alert('删除失败');
+    }
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    setImporting(true);
     try {
       const result = await importQuotations(file);
-      if (result.errorCount > 0 && result.errors.length > 0) {
-        alert(`导入完成：成功 ${result.successCount} 条，失败 ${result.errorCount} 条\n\n错误详情：\n${result.errors.slice(0, 5).join('\n')}`);
-      } else {
-        alert(`导入完成：成功 ${result.successCount} 条`);
-      }
+      alert(`导入完成: 成功 ${result.successCount} 条, 失败 ${result.errorCount} 条\n${result.errors?.slice(0, 5).join('\n') || ''}`);
       loadData();
     } catch (err) {
-      alert(`导入失败: ${err instanceof Error ? err.message : '未知错误'}`);
-    } finally {
-      setImporting(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      console.error('导入失败:', err);
+      alert('导入失败');
     }
-  };
-
-  const handleExport = async () => {
-    try {
-      await exportQuotations();
-    } catch (err) {
-      alert(`导出失败: ${err instanceof Error ? err.message : '未知错误'}`);
-    }
-  };
-
-  const handleDownloadTemplate = async () => {
-    try {
-      await downloadQuotationTemplate();
-    } catch (err) {
-      alert(`下载失败: ${err instanceof Error ? err.message : '未知错误'}`);
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const toggleSelect = (id: string) => {
-    setSelectedIds(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+  const toggleSelectAll = () => {
+    setSelectedIds(quotations.length === selectedIds.length ? [] : quotations.map(q => q.id));
   };
 
-  const toggleSelectAll = () => {
-    if (selectedIds.length === quotations.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(quotations.map(q => q.id));
-    }
+  const formatPriceRanges = (ranges?: PriceRange[]) => {
+    if (!ranges || ranges.length === 0) return '-';
+    return ranges.map(r => `${r.min_quantity}-${r.max_quantity ?? '∞'}: ¥${r.price}`).join('; ');
   };
 
   return (
     <div className="space-y-4">
-      {/* 操作栏 */}
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setPage(1);
-          }}
-          placeholder="搜索货号或名称..."
-          className="flex-1 min-w-[200px] px-3 py-2 border border-border rounded-md bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary/30"
-        />
-
-        {canCreate && (
-          <button
-            onClick={handleCreate}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:bg-primary/90 transition-colors"
+      {/* 工具栏 */}
+      <div className="flex flex-wrap gap-2 items-center justify-between">
+        <div className="flex flex-wrap gap-2 items-center">
+          <Input
+            className="w-48"
+            placeholder="搜索产品货号/名称..."
+            value={search}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+          />
+          <Button
+            variant={groupByProductName ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => { setGroupByProductName(!groupByProductName); setExpandedGroups([]); }}
           >
-            + 新增报价
-          </button>
-        )}
-
-        {canImport && (
-          <>
-            <button
-              onClick={handleDownloadTemplate}
-              className="px-3 py-2 border border-border rounded-md text-sm hover:bg-muted/50 transition-colors"
-            >
-              下载模板
-            </button>
-            <label className="px-3 py-2 border border-border rounded-md text-sm hover:bg-muted/50 transition-colors cursor-pointer">
-              {importing ? '导入中...' : '导入'}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                onChange={handleImport}
-                className="hidden"
-                disabled={importing}
-              />
-            </label>
-          </>
-        )}
-
-        {canExport && (
-          <button
-            onClick={handleExport}
-            className="px-3 py-2 border border-border rounded-md text-sm hover:bg-muted/50 transition-colors"
-          >
-            导出
-          </button>
-        )}
-
-        {canDelete && selectedIds.length > 0 && (
-          <button
-            onClick={handleBatchDelete}
-            className="px-3 py-2 bg-destructive text-destructive-foreground rounded-md text-sm font-medium hover:bg-destructive/90 transition-colors"
-          >
-            删除选中 ({selectedIds.length})
-          </button>
-        )}
+            {groupByProductName ? '已分组' : '按名称分组'}
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canCreate && <Button onClick={handleCreate}>新建报价</Button>}
+          {canImport && (
+            <>
+              <Button variant="outline" onClick={() => downloadQuotationTemplate()}>下载模板</Button>
+              <label className="cursor-pointer">
+                <Button variant="outline" asChild><span>导入</span></Button>
+                <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleImport} />
+              </label>
+            </>
+          )}
+          {canExport && <Button variant="outline" onClick={exportQuotations}>导出</Button>}
+          {canDelete && selectedIds.length > 0 && (
+            <Button variant="destructive" onClick={handleDelete}>删除 ({selectedIds.length})</Button>
+          )}
+        </div>
       </div>
 
       {/* 列表 */}
       {loading ? (
-        <div className="p-8 text-center text-muted-foreground">加载中...</div>
+        <div className="text-center py-8 text-muted-foreground">加载中...</div>
       ) : quotations.length === 0 ? (
-        <div className="p-8 text-center text-muted-foreground">
-          {search ? '未找到匹配的报价' : '暂无报价数据'}
-        </div>
-      ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
+        <div className="text-center py-8 text-muted-foreground">暂无报价数据</div>
+      ) : groupByProductName ? (
+        // 分组视图
+        <div className="border rounded-lg overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
               <tr>
-                <th className="px-3 py-3 text-left w-10">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.length === quotations.length && quotations.length > 0}
-                    onChange={toggleSelectAll}
-                    className="h-4 w-4 rounded border-border"
-                  />
-                </th>
-                <th className="px-3 py-3 text-left font-medium">货号</th>
-                <th className="px-3 py-3 text-left font-medium">名称</th>
-                <th className="px-3 py-3 text-left font-medium">规格</th>
-                <th className="px-3 py-3 text-left font-medium">价格区间</th>
-                <th className="px-3 py-3 text-left font-medium">箱规</th>
-                <th className="px-3 py-3 text-left font-medium">更新时间</th>
-                <th className="px-3 py-3 text-left font-medium w-20">操作</th>
+                <th className="p-2 w-8"></th>
+                <th className="p-2 text-left">产品名称</th>
+                <th className="p-2 text-left">规格数</th>
+                <th className="p-2 text-left">价格示例</th>
+                <th className="p-2 w-20"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody>
+              {groupedProducts.map(group => (
+                <Fragment key={group.productName}>
+                  <tr className="border-t hover:bg-muted/30 cursor-pointer bg-muted/10" onClick={() => toggleGroupExpand(group.productName)}>
+                    <td className="p-2">
+                      <Checkbox
+                        checked={group.items.every(q => selectedIds.includes(q.id))}
+                        onCheckedChange={() => {
+                          const allSelected = group.items.every(q => selectedIds.includes(q.id));
+                          setSelectedIds(prev => allSelected 
+                            ? prev.filter(id => !group.items.some(q => q.id === id))
+                            : [...prev, ...group.items.map(q => q.id)]
+                          );
+                        }}
+                      />
+                    </td>
+                    <td className="p-2 font-medium">{group.productName}</td>
+                    <td className="p-2"><Badge variant="secondary">{group.items.length}</Badge></td>
+                    <td className="p-2 text-muted-foreground">{formatPriceRanges(group.items[0]?.price_ranges)}</td>
+                    <td className="p-2 text-muted-foreground">{expandedGroups.includes(group.productName) ? '▼' : '▶'}</td>
+                  </tr>
+                  {expandedGroups.includes(group.productName) && group.items.map(q => (
+                    <tr key={q.id} className="border-t hover:bg-muted/30 cursor-pointer" onClick={() => handleRowClick(q)}>
+                      <td className="p-2">
+                        <Checkbox checked={selectedIds.includes(q.id)} onCheckedChange={() => toggleSelect(q.id)} />
+                      </td>
+                      <td className="p-2 pl-6">{q.product_code}</td>
+                      <td className="p-2">{q.specifications || '-'}</td>
+                      <td className="p-2">{formatPriceRanges(q.price_ranges)}</td>
+                      <td className="p-2">
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleView(q); }}>查看</Button>
+                          {canEdit && <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleEdit(q); }}>编辑</Button>}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        // 普通列表
+        <div className="border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="p-2 w-8"><Checkbox checked={selectedIds.length === quotations.length} onCheckedChange={toggleSelectAll} /></th>
+                <th className="p-2 text-left">产品货号</th>
+                <th className="p-2 text-left">产品名称</th>
+                <th className="p-2 text-left">规格</th>
+                <th className="p-2 text-left">包装</th>
+                <th className="p-2 text-left">价格区间</th>
+                <th className="p-2 w-24">操作</th>
+              </tr>
+            </thead>
+            <tbody>
               {quotations.map(q => (
-                <tr key={q.id} className="hover:bg-muted/30">
-                  <td className="px-3 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(q.id)}
-                      onChange={() => toggleSelect(q.id)}
-                      className="h-4 w-4 rounded border-border"
-                    />
+                <tr key={q.id} className="border-t hover:bg-muted/30 cursor-pointer" onClick={() => handleRowClick(q)}>
+                  <td className="p-2">
+                    <Checkbox checked={selectedIds.includes(q.id)} onCheckedChange={() => toggleSelect(q.id)} />
                   </td>
-                  <td className="px-3 py-3 font-medium">{q.product_code}</td>
-                  <td className="px-3 py-3">{q.product_name}</td>
-                  <td className="px-3 py-3 text-muted-foreground">{q.specifications || '-'}</td>
-                  <td className="px-3 py-3">
-                    {q.price_ranges.length > 0 ? (
-                      <div className="space-y-0.5">
-                        {q.price_ranges.slice(0, 2).map((pr, i) => (
-                          <div key={i} className="text-xs">
-                            {pr.min_quantity}-{pr.max_quantity || '∞'}: {pr.price} {pr.unit}
-                          </div>
-                        ))}
-                        {q.price_ranges.length > 2 && (
-                          <div className="text-xs text-muted-foreground">+{q.price_ranges.length - 2} 更多区间</div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3 text-muted-foreground">{q.box_specs || '-'}</td>
-                  <td className="px-3 py-3 text-muted-foreground">
-                    {new Date(q.updated_at).toLocaleDateString()}
-                  </td>
-                  <td className="px-3 py-3">
-                    <div className="flex items-center gap-2">
-                      {canEdit && (
-                        <button
-                          onClick={() => handleEdit(q)}
-                          className="text-primary hover:text-primary/80 text-xs"
-                        >
-                          编辑
-                        </button>
-                      )}
-                      {canDelete && (
-                        <button
-                          onClick={() => handleDelete(q.id)}
-                          className="text-destructive hover:text-destructive/80 text-xs"
-                        >
-                          删除
-                        </button>
-                      )}
+                  <td className="p-2">{q.product_code}</td>
+                  <td className="p-2 font-medium">{q.product_name}</td>
+                  <td className="p-2">{q.specifications || '-'}</td>
+                  <td className="p-2">{q.packaging_info || '-'}</td>
+                  <td className="p-2 text-xs">{formatPriceRanges(q.price_ranges)}</td>
+                  <td className="p-2">
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleView(q); }}>查看</Button>
+                      {canEdit && <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleEdit(q); }}>编辑</Button>}
                     </div>
                   </td>
                 </tr>
@@ -797,35 +636,16 @@ export default function QuotationList() {
 
       {/* 分页 */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">共 {total} 条</span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="px-3 py-1 border border-border rounded hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              上一页
-            </button>
-            <span className="text-muted-foreground">第 {page}/{totalPages} 页</span>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="px-3 py-1 border border-border rounded hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              下一页
-            </button>
-          </div>
+        <div className="flex justify-center gap-2 items-center text-sm">
+          <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>上一页</Button>
+          <span className="text-muted-foreground">{page} / {totalPages} (共 {total} 条)</span>
+          <Button variant="outline" size="sm" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>下一页</Button>
         </div>
       )}
 
-      {/* 编辑对话框 */}
-      <QuotationDialog
-        quotation={editingQuotation}
-        isOpen={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        onSave={handleSave}
-      />
+      {/* 弹窗 */}
+      <QuotationDialog isOpen={dialogOpen} quotation={editingQuotation} onClose={() => setDialogOpen(false)} onSave={handleSave} readOnly={false} />
+      <QuotationDialog isOpen={viewDialogOpen} quotation={viewingQuotation} onClose={() => setViewDialogOpen(false)} onSave={() => {}} readOnly={true} />
     </div>
   );
 }
