@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { SupabaseClient, User, Session } from '@supabase/supabase-js';
 import { useSupabaseConfig } from './supabase-config-inject';
 import { getSupabaseBrowserClientAsync } from './supabase-browser';
+import { resetSessionPromise } from './api';
 
 interface Enterprise {
   enterprise_id: string;
@@ -89,6 +90,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, newSession) => {
+        // Reset cached session promise so api.ts fetches fresh token
+        resetSessionPromise();
         setSession(newSession);
         setUser(newSession?.user ?? null);
         if (newSession?.user) {

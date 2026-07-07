@@ -1,17 +1,55 @@
 const API_BASE = '/api';
 
-/** Get session token from the shared Supabase client */
+// Session promise cached for performance (same session across all API calls in a render cycle)
+let sessionPromise: Promise<string | null> | null = null;
+
+/** Get session token, waiting for INITIAL_SESSION event if needed */
 export async function getSessionToken(): Promise<string | null> {
-  try {
-    const { getSupabaseBrowserClientWithRetry } = await import('@/lib/supabase-browser');
-    const supabase = await getSupabaseBrowserClientWithRetry();
-    
-    // 直接从共享客户端获取 session（与 auth-context 使用同一个客户端）
-    const { data } = await supabase.auth.getSession();
-    return data.session?.access_token ?? null;
-  } catch {
-    return null;
+  // Return cached promise if available
+  if (sessionPromise) {
+    return sessionPromise;
   }
+  
+  sessionPromise = (async () => {
+    try {
+      const { getSupabaseBrowserClientWithRetry } = await import('@/lib/supabase-browser');
+      const supabase = await getSupabaseBrowserClientWithRetry();
+      
+      // First check if session is already available
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        return session.access_token;
+      }
+      
+      // Session not ready yet - wait for INITIAL_SESSION event
+      // This happens when the client is created but hasn't loaded session from localStorage
+      return new Promise<string | null>((resolve) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          (event, newSession) => {
+            if (event === 'INITIAL_SESSION') {
+              subscription.unsubscribe();
+              resolve(newSession?.access_token ?? null);
+            }
+          }
+        );
+        
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          subscription.unsubscribe();
+          resolve(null);
+        }, 5000);
+      });
+    } catch {
+      return null;
+    }
+  })();
+  
+  return sessionPromise;
+}
+
+/** Reset session promise (call this after login/logout) */
+export function resetSessionPromise() {
+  sessionPromise = null;
 }
 
 /** Get current enterprise ID from localStorage */
