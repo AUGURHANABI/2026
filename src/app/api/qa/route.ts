@@ -247,25 +247,79 @@ ${pricingContext}`;
   }
 
   // ========== 非报价问题：搜索知识库 ==========
-  const knowledgeQuery = client
-    .from('knowledge_entries')
-    .select('id, question, answer, categories(name)')
-    .eq('is_active', true)
-    .eq('enterprise_id', enterpriseId)
-    .or(`question.ilike.%${question}%,answer.ilike.%${question}%`)
-    .limit(3);
-
-  const { data: entries, error: searchError } = await knowledgeQuery;
-  if (searchError) throw new Error(`搜索知识库失败: ${searchError.message}`);
+  // 使用更灵活的搜索方式
+  const searchTerms = question
+    .replace(/[^\w\u4e00-\u9fa5]/g, ' ')
+    .split(/\s+/)
+    .filter((k: string) => k.length >= 2);
+  
+  let entries: Array<{
+    id: string;
+    question: string;
+    answer: string;
+    categories: Array<{ name: string }> | null;
+  }> | null = null;
+  
+  if (searchTerms.length > 0) {
+    // 对每个关键词搜索知识库
+    const knowledgePromises = searchTerms.map(async (term: string) => {
+      const { data, error } = await client
+        .from('knowledge_entries')
+        .select('id, question, answer, categories(name)')
+        .eq('is_active', true)
+        .eq('enterprise_id', enterpriseId)
+        .or(`question.ilike.%${term}%,answer.ilike.%${term}%`)
+        .limit(3);
+      
+      if (error) console.error('搜索知识库关键词失败:', term, error.message);
+      return data || [];
+    });
+    
+    const knowledgeResults = await Promise.all(knowledgePromises);
+    const allEntries = knowledgeResults.flat();
+    
+    // 去重
+    entries = allEntries.filter((e, i, arr) => 
+      arr.findIndex(x => x.id === e.id) === i
+    );
+    
+    console.log('知识库搜索关键词:', searchTerms, '找到条目:', entries?.length || 0);
+  } else {
+    // 如果没有关键词，尝试用原始问题搜索
+    const { data, error: searchError } = await client
+      .from('knowledge_entries')
+      .select('id, question, answer, categories(name)')
+      .eq('is_active', true)
+      .eq('enterprise_id', enterpriseId)
+      .or(`question.ilike.%${question}%,answer.ilike.%${question}%`)
+      .limit(3);
+    
+    if (searchError) console.error('搜索知识库失败:', searchError.message);
+    entries = data;
+  }
 
   // 搜索历史问答
-  const { data: historyEntries } = await client
-    .from('qa_history')
-    .select('question, answer')
-    .eq('enterprise_id', enterpriseId)
-    .or(`question.ilike.%${question}%,answer.ilike.%${question}%`)
-    .order('created_at', { ascending: false })
-    .limit(2);
+  let historyEntries: Array<{ question: string; answer: string }> | null = null;
+  if (searchTerms.length > 0) {
+    const historyPromises = searchTerms.map(async (term: string) => {
+      const { data, error } = await client
+        .from('qa_history')
+        .select('question, answer')
+        .eq('enterprise_id', enterpriseId)
+        .or(`question.ilike.%${term}%,answer.ilike.%${term}%`)
+        .order('created_at', { ascending: false })
+        .limit(2);
+      
+      if (error) console.error('搜索历史问答失败:', term, error.message);
+      return data || [];
+    });
+    
+    const historyResults = await Promise.all(historyPromises);
+    const allHistory = historyResults.flat();
+    historyEntries = allHistory.filter((h, i, arr) => 
+      arr.findIndex(x => x.question === h.question) === i
+    );
+  }
 
   // ========== 构建上下文 ==========
   let context = '';
@@ -276,8 +330,8 @@ ${pricingContext}`;
     matchedEntryId = entries[0].id;
     context += '\n【知识库参考话术】\n';
     context += entries
-      .map((e: Record<string, unknown>, i: number) =>
-        `[参考${i + 1}] 分类: ${(e.categories as Record<string, string>)?.name ?? '未分类'}\n问题: ${(e as { question: string }).question}\n答案: ${(e as { answer: string }).answer}`
+      .map((e, i: number) =>
+        `[参考${i + 1}] 分类: ${e.categories?.[0]?.name ?? '未分类'}\n问题: ${e.question}\n答案: ${e.answer}`
       )
       .join('\n\n');
   }
@@ -300,8 +354,8 @@ ${pricingContext}`;
   if (historyEntries && historyEntries.length > 0) {
     context += '\n\n【历史问答参考】\n';
     context += historyEntries
-      .map((h: Record<string, unknown>, i: number) =>
-        `[历史${i + 1}] 问: ${(h as { question: string }).question}\n答: ${(h as { answer: string }).answer.slice(0, 200)}...`
+      .map((h, i: number) =>
+        `[历史${i + 1}] 问: ${h.question}\n答: ${h.answer.slice(0, 200)}...`
       )
       .join('\n\n');
   }
