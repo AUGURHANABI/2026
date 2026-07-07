@@ -206,7 +206,15 @@ function getSupabaseClient(token?: string): SupabaseClient | null {
   // Return cached token client
   const cached = tokenClients.get(token);
   if (cached) return cached;
+
+  const globalOptions = {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  };
+
   const client = createClient(creds.url, creds.anonKey, {
+    global: globalOptions,
     db: { timeout: 15000 },
     auth: { autoRefreshToken: false, persistSession: false },
   });

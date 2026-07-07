@@ -25,8 +25,23 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: '请先登录' }, { status: 401 });
 
   const enterpriseId = await getEnterpriseId(req, user.id);
+
+  // Check developer status first (independent of enterprise membership)
+  const isUserDeveloper = await isDeveloper(user.id);
+
   if (!enterpriseId) {
-    return NextResponse.json({ error: '请先加入企业' }, { status: 403 });
+    // Return partial data with developer status even if no enterprise
+    return NextResponse.json({
+      data: {
+        definitions: PERMISSION_DEFINITIONS,
+        permissionsByRole: {},
+        memberOverrides: [],
+        myPermissions: [],
+        myRole: null,
+        isAdmin: false,
+        isDeveloper: isUserDeveloper,
+      },
+    });
   }
 
   const client = getPermissionClient() || getSupabaseClientOrThrow();
@@ -82,9 +97,6 @@ export async function GET(req: NextRequest) {
       myPermissions = permissionsByRole['member'] || [];
     }
   }
-
-  // Check developer status
-  const isUserDeveloper = await isDeveloper(user.id);
 
   return NextResponse.json({
     data: {

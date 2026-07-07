@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { usePermissions } from '@/lib/permission-context';
+import { useDataSync } from '@/hooks/use-data-sync';
 import {
   fetchTags,
   createTag,
@@ -23,6 +24,7 @@ const PRESET_COLORS = [
 
 export function TagManager() {
   const { hasPermission } = usePermissions();
+  const { syncKey } = useDataSync();
   const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
@@ -46,7 +48,7 @@ export function TagManager() {
 
   useEffect(() => {
     loadTags();
-  }, [loadTags]);
+  }, [loadTags, syncKey]);
 
   const handleSave = async () => {
     if (!formName.trim()) return;
