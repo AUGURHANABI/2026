@@ -1,9 +1,8 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { SupabaseClient, User, Session } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, User, Session } from '@supabase/supabase-js';
 import { useSupabaseConfig } from './supabase-config-inject';
-import { getSupabaseBrowserClientAsync } from './supabase-browser';
 
 interface Enterprise {
   enterprise_id: string;
@@ -20,8 +19,6 @@ interface AuthContextType {
   currentEnterpriseId: string | null;
   setCurrentEnterpriseId: (id: string | null) => void;
   signOut: () => Promise<void>;
-  /** Wait for session to be ready (returns token or null) */
-  waitForSession: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -32,7 +29,6 @@ const AuthContext = createContext<AuthContextType>({
   currentEnterpriseId: null,
   setCurrentEnterpriseId: () => {},
   signOut: async () => {},
-  waitForSession: async () => null,
 });
 
 export function useAuth() {
@@ -41,44 +37,6 @@ export function useAuth() {
 
 interface AuthProviderProps {
   children: ReactNode;
-}
-
-// Global session state - set by auth-context, consumed by api.ts
-let cachedToken: string | null = null;
-let sessionReadyResolve: ((token: string | null) => void) | null = null;
-let sessionReadyPromise: Promise<string | null> = new Promise((resolve) => {
-  sessionReadyResolve = resolve;
-});
-
-/** Called by api.ts to wait for session (with 3s timeout) */
-export async function waitForSessionToken(): Promise<string | null> {
-  // If we already have a cached token, return immediately
-  if (cachedToken) {
-    return cachedToken;
-  }
-  
-  // Wait for session with timeout
-  const timeoutPromise = new Promise<string | null>((resolve) => {
-    setTimeout(() => resolve(null), 3000);
-  });
-  
-  const token = await Promise.race([sessionReadyPromise, timeoutPromise]);
-  return token;
-}
-
-/** Called by auth-context when session state changes */
-export function notifySessionReady(token: string | null) {
-  // Cache the token for immediate access
-  cachedToken = token;
-  
-  // Resolve the CURRENT promise first (before creating new one)
-  if (sessionReadyResolve) {
-    sessionReadyResolve(token);
-  }
-  // Then create new promise for next session change
-  sessionReadyPromise = new Promise((resolve) => {
-    sessionReadyResolve = resolve;
-  });
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
@@ -95,22 +53,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return null;
   });
 
-  // Step 1: Get shared Supabase client when config is ready
+  // Step 1: Create Supabase client when config is ready
   useEffect(() => {
     if (!config?.url || !config?.anonKey) return;
 
-    getSupabaseBrowserClientAsync()
-      .then((client) => {
-        setSupabase(client);
-      })
-      .catch((err) => {
-        console.error('Failed to get Supabase client:', err);
-        setIsLoading(false);
-        notifySessionReady(null);
+    try {
+      const client = createClient(config.url, config.anonKey, {
+        db: { timeout: 60000 },
+        auth: {
+          autoRefreshToken: true,
+          persistSession: true,
+        },
       });
+      setSupabase(client);
+    } catch (err) {
+      console.error('Failed to create Supabase client:', err);
+      setIsLoading(false);
+    }
   }, [config]);
 
-  // Step 2: Once client is ready, check session
+  // Step 2: Once client is created, check session
   useEffect(() => {
     if (!supabase) return;
 
@@ -118,8 +80,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
-      // Notify api.ts that session is ready
-      notifySessionReady(currentSession?.access_token ?? null);
       if (currentSession?.user) {
         loadEnterprises(currentSession.access_token);
       } else {
@@ -128,13 +88,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }).catch((err) => {
       console.error('Failed to get session:', err);
       setIsLoading(false);
-      notifySessionReady(null);
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, newSession) => {
-        notifySessionReady(newSession?.access_token ?? null);
         setSession(newSession);
         setUser(newSession?.user ?? null);
         if (newSession?.user) {
@@ -179,7 +137,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.error('Failed to load enterprises:', err);
     } finally {
       setIsLoading(false);
-      }
+    }
   };
 
   const signOut = async () => {
@@ -188,10 +146,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     localStorage.removeItem('current_enterprise_id');
     setCurrentEnterpriseId(null);
     setEnterprises([]);
-    };
-
-  const waitForSession = async (): Promise<string | null> => {
-    return waitForSessionToken();
   };
 
   return (
@@ -208,7 +162,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
           else localStorage.removeItem('current_enterprise_id');
         },
         signOut,
-        waitForSession,
       }}
     >
       {children}
