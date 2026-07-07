@@ -12,12 +12,14 @@ import { TagManager } from '@/components/knowledge-base/tag-manager';
 import { Statistics } from '@/components/knowledge-base/statistics';
 import PermissionSettings from '@/components/knowledge-base/permission-settings';
 import DeveloperDashboard from '@/components/knowledge-base/developer-dashboard';
+import QuotationList from '@/components/knowledge-base/quotation-list';
 
-type ActiveTab = 'knowledge' | 'qa' | 'categories' | 'tags' | 'statistics' | 'permissions' | 'developer';
+type ActiveTab = 'knowledge' | 'qa' | 'quotations' | 'categories' | 'tags' | 'statistics' | 'permissions' | 'developer';
 
 const tabLabels: Record<ActiveTab, string> = {
   knowledge: '知识库',
   qa: 'AI 问答',
+  quotations: '产品报价',
   categories: '分类管理',
   tags: '标签管理',
   statistics: '数据统计',
@@ -147,6 +149,7 @@ export default function Home() {
         <main className="flex-1 p-4 md:p-6 overflow-x-hidden">
           {activeTab === 'knowledge' && <KnowledgeList />}
           {activeTab === 'qa' && <AIQA />}
+          {activeTab === 'quotations' && <QuotationList />}
           {activeTab === 'categories' && <CategoryManager />}
           {activeTab === 'tags' && <TagManager />}
           {activeTab === 'statistics' && <Statistics />}

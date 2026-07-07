@@ -154,7 +154,7 @@ export async function checkPermission(
   }
 
   // 3. Hardcoded defaults if no permission data exists
-  const defaultMemberPermissions = ['entry:create', 'entry:rate', 'qa:ask'];
+  const defaultMemberPermissions = ['entry:create', 'entry:rate', 'qa:ask', 'quotation:create', 'quotation:export'];
   return defaultMemberPermissions.includes(permission);
 }
 
@@ -242,6 +242,19 @@ export function forbiddenResponse(permission?: string) {
     JSON.stringify({ error: permission ? `没有 ${permission} 权限` : '没有操作权限' }),
     {
       status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+}
+
+/**
+ * Not found response
+ */
+export function notFoundResponse(message: string = '资源不存在') {
+  return new Response(
+    JSON.stringify({ error: message }),
+    {
+      status: 404,
       headers: { 'Content-Type': 'application/json' },
     }
   );

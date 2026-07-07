@@ -23,6 +23,11 @@ const ALL_PERMISSIONS: PermissionDefinition[] = [
   { key: 'tag:manage', label: '管理标签', category: '分类标签' },
   { key: 'comment:delete', label: '删除评论', category: '评论管理' },
   { key: 'comment:merge', label: '合并评论到答案', category: '评论管理' },
+  { key: 'quotation:create', label: '新增报价', category: '产品报价' },
+  { key: 'quotation:edit', label: '编辑报价', category: '产品报价' },
+  { key: 'quotation:delete', label: '删除报价', category: '产品报价' },
+  { key: 'quotation:import', label: '导入报价', category: '产品报价' },
+  { key: 'quotation:export', label: '导出报价', category: '产品报价' },
   { key: 'entry:rate', label: '效果评分', category: '其他' },
   { key: 'qa:ask', label: 'AI问答', category: '其他' },
 ];

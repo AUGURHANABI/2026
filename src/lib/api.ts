@@ -576,3 +576,187 @@ export async function removeEnterpriseMember(enterpriseId: string, userId: strin
   }
   return res.json();
 }
+
+// ============ 产品报价相关 API ============
+
+export interface PriceRange {
+  id?: string;
+  min_quantity: number;
+  max_quantity: number | null;
+  price: number;
+  unit: string;
+}
+
+export interface ProductQuotation {
+  id: string;
+  product_code: string;
+  product_name: string;
+  specifications: string | null;
+  packaging_info: string | null;
+  weight: number | null;
+  dimensions: string | null;
+  box_specs: string | null;
+  remarks_text: string | null;
+  remarks_images: string[];
+  remarks_attachments: string[];
+  price_ranges: PriceRange[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuotationListResult {
+  data: ProductQuotation[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export async function fetchQuotations(params?: {
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}): Promise<QuotationListResult> {
+  const query = new URLSearchParams();
+  if (params?.search) query.set('search', params.search);
+  if (params?.page) query.set('page', params.page.toString());
+  if (params?.pageSize) query.set('pageSize', params.pageSize.toString());
+
+  const res = await authFetch(`${API_BASE}/quotations?${query.toString()}`);
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '获取报价列表失败');
+  }
+  return res.json();
+}
+
+export async function fetchQuotationById(id: string): Promise<{ data: ProductQuotation }> {
+  const res = await authFetch(`${API_BASE}/quotations/${id}`);
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '获取报价详情失败');
+  }
+  return res.json();
+}
+
+export async function createQuotation(data: {
+  product_code: string;
+  product_name: string;
+  specifications?: string;
+  packaging_info?: string;
+  weight?: number;
+  dimensions?: string;
+  box_specs?: string;
+  remarks_text?: string;
+  remarks_images?: string[];
+  remarks_attachments?: string[];
+  price_ranges: PriceRange[];
+}): Promise<{ data: ProductQuotation }> {
+  const res = await authFetch(`${API_BASE}/quotations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '创建报价失败');
+  }
+  return res.json();
+}
+
+export async function updateQuotation(id: string, data: {
+  product_code: string;
+  product_name: string;
+  specifications?: string;
+  packaging_info?: string;
+  weight?: number;
+  dimensions?: string;
+  box_specs?: string;
+  remarks_text?: string;
+  remarks_images?: string[];
+  remarks_attachments?: string[];
+  price_ranges: PriceRange[];
+}): Promise<{ data: ProductQuotation }> {
+  const res = await authFetch(`${API_BASE}/quotations/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '更新报价失败');
+  }
+  return res.json();
+}
+
+export async function deleteQuotation(id: string): Promise<{ success: boolean }> {
+  const res = await authFetch(`${API_BASE}/quotations/${id}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '删除报价失败');
+  }
+  return res.json();
+}
+
+export async function batchDeleteQuotations(ids: string[]): Promise<{ success: boolean; deletedCount: number }> {
+  const res = await authFetch(`${API_BASE}/quotations?ids=${ids.join(',')}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '批量删除失败');
+  }
+  return res.json();
+}
+
+export async function downloadQuotationTemplate(): Promise<void> {
+  const res = await authFetch(`${API_BASE}/quotations/template`);
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '下载模板失败');
+  }
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'quotation_template.csv';
+  link.click();
+  window.URL.revokeObjectURL(url);
+}
+
+export async function importQuotations(file: File): Promise<{
+  success: boolean;
+  importedCount: number;
+  errorCount: number;
+  errors: Array<{ row: number; error: string }>;
+}> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await authFetch(`${API_BASE}/quotations/import`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '导入失败');
+  }
+  return res.json();
+}
+
+export async function exportQuotations(): Promise<void> {
+  const res = await authFetch(`${API_BASE}/quotations/export`);
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || '导出失败');
+  }
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'quotations_export.csv';
+  link.click();
+  window.URL.revokeObjectURL(url);
+}

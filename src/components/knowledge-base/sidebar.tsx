@@ -12,7 +12,7 @@ interface Enterprise {
 
 interface SidebarProps {
   activeTab: string;
-  onTabChange: (tab: 'knowledge' | 'qa' | 'categories' | 'tags' | 'statistics' | 'permissions' | 'developer') => void;
+  onTabChange: (tab: 'knowledge' | 'qa' | 'quotations' | 'categories' | 'tags' | 'statistics' | 'permissions' | 'developer') => void;
   isAdmin?: boolean;
   isDeveloper?: boolean;
   mobileOpen?: boolean;
@@ -22,6 +22,7 @@ interface SidebarProps {
 const navItems = [
   { id: 'knowledge' as const, label: '知识库', icon: '📚' },
   { id: 'qa' as const, label: 'AI 问答', icon: '💬' },
+  { id: 'quotations' as const, label: '产品报价', icon: '💰' },
   { id: 'categories' as const, label: '分类管理', icon: '📂' },
   { id: 'tags' as const, label: '标签管理', icon: '🏷️' },
   { id: 'statistics' as const, label: '数据统计', icon: '📊' },
