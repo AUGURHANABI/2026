@@ -84,21 +84,31 @@ export async function POST(req: NextRequest) {
   }> | null = null;
 
   if (productKeywords.length > 0) {
-    const orConditions = productKeywords
-      .map((k: string) => `product_name.ilike.%${k}%,product_code.ilike.%${k}%,specifications.ilike.%${k}%`)
-      .join(',');
+    // 构建搜索条件 - 对每个关键词搜索产品名、货号、规格
+    const searchPromises = productKeywords.map(async (keyword: string) => {
+      const { data, error } = await client
+        .from('product_quotations')
+        .select('id, product_code, product_name, specifications, packaging_info, weight, dimensions, box_specs, remarks_text')
+        .eq('enterprise_id', enterpriseId)
+        .or(`product_name.ilike.%${keyword}%,product_code.ilike.%${keyword}%,specifications.ilike.%${keyword}%`)
+        .limit(5);
+      
+      if (error) console.error('搜索关键词失败:', keyword, error.message);
+      return data || [];
+    });
 
-    // 先查询产品
-    const { data, error: productError } = await client
-      .from('product_quotations')
-      .select('id, product_code, product_name, specifications, packaging_info, weight, dimensions, box_specs, remarks_text')
-      .eq('enterprise_id', enterpriseId)
-      .or(orConditions)
-      .limit(10);
+    // 合并所有搜索结果（去重）
+    const searchResults = await Promise.all(searchPromises);
+    const allProducts = searchResults.flat();
+    const uniqueProducts = allProducts.filter((p, i, arr) => 
+      arr.findIndex(x => x.id === p.id) === i
+    );
+
+    console.log('AI报价查询 - enterprise_id:', enterpriseId, '关键词:', productKeywords, '找到产品:', uniqueProducts.length);
 
     // 如果找到产品，再查询价格区间
-    if (data && data.length > 0) {
-      const productIds = data.map(p => p.id);
+    if (uniqueProducts.length > 0) {
+      const productIds = uniqueProducts.map(p => p.id);
       const { data: priceRanges, error: prError } = await client
         .from('product_price_ranges')
         .select('quotation_id, min_quantity, max_quantity, price, unit')
@@ -107,7 +117,7 @@ export async function POST(req: NextRequest) {
       if (prError) console.error('查询价格区间失败:', prError.message);
       
       // 合并价格区间到产品
-      products = data.map(p => ({
+      products = uniqueProducts.map(p => ({
         ...p,
         price_ranges: priceRanges?.filter(pr => pr.quotation_id === p.id).map(pr => ({
           min_quantity: pr.min_quantity,
@@ -116,11 +126,11 @@ export async function POST(req: NextRequest) {
           unit: pr.unit || 'CNY'
         })) || null
       }));
+      
+      console.log('AI报价查询 - 有价格的产品:', products?.filter(p => p.price_ranges && p.price_ranges.length > 0).length);
     } else {
       products = null;
     }
-
-    if (productError) console.error('搜索产品失败:', productError.message);
   }
 
   // ========== 报价类问题的特殊处理 ==========
