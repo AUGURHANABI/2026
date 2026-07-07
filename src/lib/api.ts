@@ -1,39 +1,12 @@
 const API_BASE = '/api';
 
 /** Get session token from Supabase for authenticated API calls */
-export async function getSessionToken(): Promise<string | null> {
+async function getSessionToken(): Promise<string | null> {
   try {
     const { getSupabaseBrowserClientWithRetry } = await import('@/lib/supabase-browser');
     const supabase = await getSupabaseBrowserClientWithRetry();
-    
-    // 等待 session 从 localStorage 同步到内存
-    // Supabase 客户端创建后，session 是异步加载的，直接调用 getSession() 可能返回 null
-    // 使用 onAuthStateChange 监听 INITIAL_SESSION 事件确保 session 已加载
-    const sessionPromise = new Promise<string | null>((resolve) => {
-      let resolved = false;
-      
-      // 监听初始 session 加载完成
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        if (event === 'INITIAL_SESSION' && !resolved) {
-          resolved = true;
-          subscription.unsubscribe();
-          resolve(session?.access_token ?? null);
-        }
-      });
-      
-      // 3秒超时兜底：如果 INITIAL_SESSION 事件未触发，直接读取 getSession()
-      setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          subscription.unsubscribe();
-          supabase.auth.getSession().then(({ data }) => {
-            resolve(data.session?.access_token ?? null);
-          });
-        }
-      }, 3000);
-    });
-    
-    return sessionPromise;
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
   } catch {
     return null;
   }
@@ -56,10 +29,7 @@ async function authFetch(url: string, options: RequestInit = {}): Promise<Respon
   if (enterpriseId) {
     headers.set('x-enterprise-id', enterpriseId);
   }
-  // GET 请求显式禁用缓存，避免移动端浏览器命中启发式缓存返回旧数据
-  const method = (options.method || 'GET').toUpperCase();
-  const cache = method === 'GET' ? 'no-store' : options.cache;
-  return fetch(url, { ...options, headers, cache });
+  return fetch(url, { ...options, headers });
 }
 
 export async function fetchCategories() {

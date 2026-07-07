@@ -32,6 +32,7 @@ const developerNavItem = { id: 'developer' as const, label: '开发者管理', i
 
 export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOpen, onMobileClose }: SidebarProps) {
   const { user, session, signOut } = useAuth();
+  const token = session?.access_token ?? null;
   const [enterprises, setEnterprises] = useState<Enterprise[]>([]);
   const [currentEnterprise, setCurrentEnterprise] = useState<Enterprise | null>(null);
   const [showEnterpriseDropdown, setShowEnterpriseDropdown] = useState(false);
@@ -42,13 +43,10 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOp
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (user && session?.access_token) {
-      loadEnterprises();
-    }
-  }, [user, session?.access_token]);
+    loadEnterprises();
+  }, [token]);
 
   const loadEnterprises = async () => {
-    const token = session?.access_token;
     if (!token) return;
     try {
       const res = await fetch('/api/enterprises', {
@@ -82,16 +80,11 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOp
 
   const handleJoinEnterprise = async () => {
     if (!joinCode.trim()) return;
-    const token = session?.access_token;
-    if (!token) {
-      alert('登录状态异常，请刷新页面后重试');
-      return;
-    }
     setLoading(true);
     try {
       const res = await fetch('/api/enterprises/join', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-session': token },
+        headers: { 'Content-Type': 'application/json', 'x-session': token || '' },
         body: JSON.stringify({ invite_code: joinCode.trim() }),
       });
       const data = await res.json();
@@ -120,16 +113,11 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOp
 
   const handleCreateEnterprise = async () => {
     if (!newEnterpriseName.trim()) return;
-    const token = session?.access_token;
-    if (!token) {
-      alert('登录状态异常，请刷新页面后重试');
-      return;
-    }
     setLoading(true);
     try {
       const res = await fetch('/api/enterprises', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-session': token },
+        headers: { 'Content-Type': 'application/json', 'x-session': token || '' },
         body: JSON.stringify({ name: newEnterpriseName.trim() }),
       });
       const data = await res.json();
@@ -219,27 +207,18 @@ export function Sidebar({ activeTab, onTabChange, isAdmin, isDeveloper, mobileOp
               ))}
 
               <div className="border-t border-white/10">
-                {user && (
-                  <>
-                    <button
-                      onClick={() => { setShowJoinDialog(true); setShowEnterpriseDropdown(false); }}
-                      className="w-full text-left px-3 py-2 text-sm text-cyan-400 hover:bg-white/10"
-                    >
-                      + 加入企业
-                    </button>
-                    <button
-                      onClick={() => { setShowCreateDialog(true); setShowEnterpriseDropdown(false); }}
-                      className="w-full text-left px-3 py-2 text-sm text-cyan-400 hover:bg-white/10"
-                    >
-                      + 创建企业
-                    </button>
-                  </>
-                )}
-                {!user && (
-                  <div className="px-3 py-2 text-xs text-slate-400">
-                    登录后可创建或加入企业
-                  </div>
-                )}
+                <button
+                  onClick={() => { setShowJoinDialog(true); setShowEnterpriseDropdown(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-cyan-400 hover:bg-white/10"
+                >
+                  + 加入企业
+                </button>
+                <button
+                  onClick={() => { setShowCreateDialog(true); setShowEnterpriseDropdown(false); }}
+                  className="w-full text-left px-3 py-2 text-sm text-cyan-400 hover:bg-white/10"
+                >
+                  + 创建企业
+                </button>
               </div>
             </div>
           )}
