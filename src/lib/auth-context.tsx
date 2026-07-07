@@ -1,8 +1,9 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { createClient, SupabaseClient, User, Session } from '@supabase/supabase-js';
+import { SupabaseClient, User, Session } from '@supabase/supabase-js';
 import { useSupabaseConfig } from './supabase-config-inject';
+import { getSupabaseBrowserClientAsync } from './supabase-browser';
 
 interface Enterprise {
   enterprise_id: string;
@@ -53,26 +54,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return null;
   });
 
-  // Step 1: Create Supabase client when config is ready
+  // Step 1: Get shared Supabase client when config is ready
   useEffect(() => {
     if (!config?.url || !config?.anonKey) return;
 
-    try {
-      const client = createClient(config.url, config.anonKey, {
-        db: { timeout: 60000 },
-        auth: {
-          autoRefreshToken: true,
-          persistSession: true,
-        },
+    getSupabaseBrowserClientAsync()
+      .then((client) => {
+        setSupabase(client);
+      })
+      .catch((err) => {
+        console.error('Failed to get Supabase client:', err);
+        setIsLoading(false);
       });
-      setSupabase(client);
-    } catch (err) {
-      console.error('Failed to create Supabase client:', err);
-      setIsLoading(false);
-    }
   }, [config]);
 
-  // Step 2: Once client is created, check session
+  // Step 2: Once client is ready, check session
   useEffect(() => {
     if (!supabase) return;
 
