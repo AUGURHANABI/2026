@@ -121,7 +121,6 @@ export async function POST(req: NextRequest) {
     }
 
     if (productError) console.error('搜索产品失败:', productError.message);
-    products = data as typeof products;
   }
 
   // ========== 报价类问题的特殊处理 ==========
