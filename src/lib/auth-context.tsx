@@ -56,14 +56,14 @@ export async function waitForSessionToken(): Promise<string | null> {
 
 /** Called by auth-context when session state changes */
 export function notifySessionReady(token: string | null) {
-  // Create new promise for next session change
-  sessionReadyPromise = new Promise((resolve) => {
-    sessionReadyResolve = resolve;
-  });
-  // Resolve the current promise
+  // Resolve the CURRENT promise first (before creating new one)
   if (sessionReadyResolve) {
     sessionReadyResolve(token);
   }
+  // Then create new promise for next session change
+  sessionReadyPromise = new Promise((resolve) => {
+    sessionReadyResolve = resolve;
+  });
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
