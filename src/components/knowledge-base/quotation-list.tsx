@@ -594,9 +594,10 @@ export default function QuotationList() {
     setImporting(true);
     try {
       const result = await importQuotations(file);
-      alert(`导入完成：成功 ${result.importedCount} 条，失败 ${result.errorCount} 条`);
       if (result.errorCount > 0 && result.errors.length > 0) {
-        console.warn('Import errors:', result.errors);
+        alert(`导入完成：成功 ${result.successCount} 条，失败 ${result.errorCount} 条\n\n错误详情：\n${result.errors.slice(0, 5).join('\n')}`);
+      } else {
+        alert(`导入完成：成功 ${result.successCount} 条`);
       }
       loadData();
     } catch (err) {

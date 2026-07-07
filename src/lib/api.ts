@@ -728,9 +728,10 @@ export async function downloadQuotationTemplate(): Promise<void> {
 
 export async function importQuotations(file: File): Promise<{
   success: boolean;
-  importedCount: number;
+  successCount: number;
   errorCount: number;
-  errors: Array<{ row: number; error: string }>;
+  errors: string[];
+  importedItems: Array<{ productCode: string; productName: string }>;
 }> {
   const formData = new FormData();
   formData.append('file', file);

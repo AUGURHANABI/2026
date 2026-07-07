@@ -171,6 +171,8 @@ export async function POST(req: NextRequest) {
     // 第一行是标题
     const headers = rows[0];
     console.log('导入文件列数:', headers.length, '数据行数:', rows.length - 1);
+    console.log('标题行:', headers);
+    console.log('前两行数据:', rows.slice(1, 3));
 
     // 查找列索引（支持中文和英文列名）
     const findColumnIndex = (headerNames: string[]): number => {
