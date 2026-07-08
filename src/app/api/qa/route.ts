@@ -3,54 +3,6 @@ import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
 import { LLMClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
 import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/lib/auth-helpers';
 
-// 判断是否为明确的报价问题（产品+数量+价格词组合）
-function isExplicitPricingQuestion(question: string): boolean {
-  // 必须同时满足：产品名相关 + 数量 + 价格关键词
-  const hasQuantity = /\d+(个|件|套|pcs|Pieces|件套)/i.test(question);
-  const hasPriceKeyword = /(价格|多少钱|报价|价位|单价|批发价)/.test(question);
-  // "多少可以包邮" 等不是报价问题，是运费问题
-  const isShippingQuestion = /(包邮|运费|快递|物流|发货|送货)/.test(question);
-  
-  // 只有有数量和价格关键词，且不是运费问题才算报价问题
-  return hasQuantity && hasPriceKeyword && !isShippingQuestion;
-}
-
-// 从问题中提取数量信息
-function extractQuantity(question: string): number | null {
-  const match = question.match(/(\d+)(个|件|套|pcs| Pieces|件套)/i);
-  if (match) {
-    return parseInt(match[1], 10);
-  }
-  return null;
-}
-
-// 提取产品搜索关键词（移除价格词，只保留产品名）
-function extractProductKeywords(question: string): string[] {
-  // 移除数量和价格关键词，提取纯产品名
-  const cleanedQuestion = question
-    .replace(/\d+(个|件|套|pcs|Pieces|件套)/gi, '')
-    .replace(/(价格|多少钱|报价|价位|单价|批发价|成本|费用)/g, '')
-    .replace(/(可以|怎么|请问|你好|在吗|有没有|帮我|我想|什么)/g, '');
-  
-  return cleanedQuestion
-    .replace(/[^\w\u4e00-\u9fa5]/g, ' ')
-    .split(/\s+/)
-    .filter((k: string) => k.length >= 2);
-}
-
-// 提取知识库搜索关键词（保留价格词，用于匹配话术）
-function extractKnowledgeKeywords(question: string): string[] {
-  // 移除数量但保留价格关键词，用于匹配价格相关话术
-  const cleanedQuestion = question
-    .replace(/\d+(个|件|套|pcs|Pieces|件套)/gi, '')
-    .replace(/(可以|怎么|请问|你好|在吗|有没有|帮我|我想|什么)/g, '');
-  
-  return cleanedQuestion
-    .replace(/[^\w\u4e00-\u9fa5]/g, ' ')
-    .split(/\s+/)
-    .filter((k: string) => k.length >= 2);
-}
-
 export async function POST(req: NextRequest) {
   const user = await getAuthUser(req);
   if (!user) return unauthorizedResponse();
@@ -64,6 +16,7 @@ export async function POST(req: NextRequest) {
 
   // Check permission: qa:ask
   if (enterpriseId) {
+    // License check
     const licenseErr = await checkLicenseExpired(enterpriseId);
     if (licenseErr) return licenseErr;
 
@@ -71,6 +24,7 @@ export async function POST(req: NextRequest) {
     if (!canAsk) return forbiddenResponse('qa:ask');
   }
 
+  // Reuse a single client for all operations (no token = service role)
   const client = getSupabaseClientOrThrow();
 
   if (!enterpriseId) {
@@ -80,182 +34,140 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // ========== 并行搜索知识库和产品 ==========
-  const productKeywords = extractProductKeywords(question); // 产品搜索用（纯产品名）
-  const knowledgeKeywords = extractKnowledgeKeywords(question); // 知识库搜索用（保留价格词）
-  const askedQuantity = extractQuantity(question);
-  const isExplicitPricing = isExplicitPricingQuestion(question);
+  // ========== 搜索知识库 ==========
+  const knowledgeQuery = client
+    .from('knowledge_entries')
+    .select('id, question, answer, categories(name)')
+    .eq('is_active', true)
+    .eq('enterprise_id', enterpriseId)
+    .or(`question.ilike.%${question}%,answer.ilike.%${question}%`)
+    .limit(3);
 
-  console.log('问题分析:', { question, productKeywords, knowledgeKeywords, askedQuantity, isExplicitPricing });
+  const { data: entries, error: searchError } = await knowledgeQuery;
+  if (searchError) throw new Error(`搜索知识库失败: ${searchError.message}`);
 
-  // 并行执行所有搜索
-  const [knowledgeResults, productResults, historyResults] = await Promise.all([
-    // 搜索知识库（用保留价格词的关键词）
-    searchKnowledge(client, enterpriseId, knowledgeKeywords, question),
-    // 搜索产品（用纯产品名关键词）
-    searchProducts(client, enterpriseId, productKeywords),
-    // 搜索历史问答（用保留价格词的关键词）
-    searchHistory(client, enterpriseId, knowledgeKeywords, question),
-  ]);
-
-  const entries = knowledgeResults;
-  let products: Array<{
-    id: string;
-    product_code: string;
-    product_name: string;
-    specifications: string | null;
-    packaging_info: string | null;
-    weight: number | null;
-    dimensions: string | null;
-    box_specs: string | null;
-    remarks_text: string | null;
-    price_ranges: Array<{ min_quantity: number; max_quantity: number | null; price: number; unit: string }> | null;
-  }> | null = productResults;
-  const historyEntries = historyResults;
-
-  // 如果找到产品，查询价格区间
-  if (products && products.length > 0) {
-    const productIds = products.map(p => p.id);
-    const { data: priceRanges, error: prError } = await client
-      .from('product_price_ranges')
-      .select('quotation_id, min_quantity, max_quantity, price, unit')
-      .in('quotation_id', productIds);
+  // ========== 搜索产品报价 ==========
+  // 提取产品关键词（简单匹配：查找包含数字的产品名/货号）
+  const productKeywords = question.replace(/[^\w\u4e00-\u9fa5]/g, ' ').split(/\s+/).filter((k: string) => k.length >= 2);
+  
+  // 搜索产品：按产品名称或货号匹配
+  let products: unknown[] | null = null;
+  
+  if (productKeywords.length > 0) {
+    const orConditions = productKeywords
+      .map((k: string) => `product_name.ilike.%${k}%,product_code.ilike.%${k}%,specifications.ilike.%${k}%`)
+      .join(',');
     
-    if (prError) console.error('查询价格区间失败:', prError.message);
+    const { data, error: productError } = await client
+      .from('product_quotations')
+      .select(`
+        id, product_code, product_name, specifications, packaging_info, 
+        weight, dimensions, box_specs, remarks_text,
+        price_ranges:min_quantity,max_quantity,price,unit
+      `)
+      .eq('enterprise_id', enterpriseId)
+      .or(orConditions)
+      .limit(5);
     
-    products = products.map(p => ({
-      ...p,
-      price_ranges: priceRanges?.filter(pr => pr.quotation_id === p.id).map(pr => ({
-        min_quantity: pr.min_quantity,
-        max_quantity: pr.max_quantity,
-        price: parseFloat(String(pr.price)) || 0,
-        unit: pr.unit || 'CNY'
-      })) || null
-    }));
+    if (productError) console.error('搜索产品失败:', productError.message);
+    products = data;
   }
 
-  console.log('搜索结果:', {
-    knowledgeCount: entries?.length || 0,
-    productCount: products?.length || 0,
-    historyCount: historyEntries?.length || 0
-  });
+  // ========== 搜索历史问答 ==========
+  const { data: historyEntries } = await client
+    .from('qa_history')
+    .select('question, answer')
+    .eq('enterprise_id', enterpriseId)
+    .or(`question.ilike.%${question}%,answer.ilike.%${question}%`)
+    .order('created_at', { ascending: false })
+    .limit(2);
 
-  // ========== 构建上下文并判断回复策略 ==========
+  // ========== 构建上下文 ==========
   let context = '';
   let matchedEntryId: string | null = null;
-  let hasKnowledgeData = false;
-  let hasProductData = false;
-  let hasPriceData = false;
 
   // 知识库上下文
   if (entries && entries.length > 0) {
     matchedEntryId = entries[0].id;
-    hasKnowledgeData = true;
     context += '\n【知识库参考话术】\n';
     context += entries
-      .map((e, i: number) =>
-        `[参考${i + 1}] 分类: ${e.categories?.[0]?.name ?? '未分类'}\n问题: ${e.question}\n答案: ${e.answer}`
+      .map((e: Record<string, unknown>, i: number) =>
+        `[参考${i + 1}] 分类: ${(e.categories as Record<string, string>)?.name ?? '未分类'}\n问题: ${(e as { question: string }).question}\n答案: ${(e as { answer: string }).answer}`
       )
       .join('\n\n');
   }
 
   // 产品报价上下文
   if (products && products.length > 0) {
-    hasProductData = true;
-    const productsWithPrice = products.filter(p => p.price_ranges && p.price_ranges.length > 0);
-    hasPriceData = productsWithPrice.length > 0;
-
-    if (hasPriceData && isExplicitPricing) {
-      // 报价问题且有价格数据 - 详细展示
-      context += '\n\n【产品报价信息】\n';
-      productsWithPrice.forEach((p, i) => {
-        context += `\n产品${i + 1}: ${p.product_name}`;
-        if (p.specifications) context += ` (${p.specifications})`;
-        context += `\n货号: ${p.product_code}`;
+    context += '\n\n【产品报价信息】\n';
+    context += (products as Array<Record<string, unknown>>)
+      .map((p, i) => {
+        const product = p as {
+          product_code: string;
+          product_name: string;
+          specifications: string | null;
+          packaging_info: string | null;
+          weight: number | null;
+          dimensions: string | null;
+          box_specs: string | null;
+          remarks_text: string | null;
+          price_ranges: Array<{ min_quantity: number; max_quantity: number | null; price: number; unit: string }> | null;
+        };
         
-        if (p.price_ranges && p.price_ranges.length > 0) {
-          context += '\n价格区间:';
-          p.price_ranges.forEach(pr => {
+        let info = `[产品${i + 1}] 货号: ${product.product_code}\n名称: ${product.product_name}`;
+        if (product.specifications) info += `\n规格: ${product.specifications}`;
+        if (product.packaging_info) info += `\n包装: ${product.packaging_info}`;
+        if (product.weight) info += `\n重量: ${product.weight}kg`;
+        if (product.dimensions) info += `\n尺寸: ${product.dimensions}`;
+        if (product.box_specs) info += `\n箱规: ${product.box_specs}`;
+        if (product.remarks_text) info += `\n备注: ${product.remarks_text}`;
+        
+        // 价格区间
+        if (product.price_ranges && product.price_ranges.length > 0) {
+          info += '\n价格区间:';
+          product.price_ranges.forEach((pr, idx) => {
             const maxQty = pr.max_quantity ? `-${pr.max_quantity}` : '以上';
-            context += `\n  - ${pr.min_quantity}${maxQty}件: ¥${pr.price}/${pr.unit}`;
+            info += `\n  - ${pr.min_quantity}${maxQty}件: ¥${pr.price}/${pr.unit}`;
           });
-          
-          if (askedQuantity) {
-            const matchedRange = p.price_ranges.find(pr => 
-              askedQuantity >= pr.min_quantity && (!pr.max_quantity || askedQuantity <= pr.max_quantity)
-            );
-            if (matchedRange) {
-              const total = askedQuantity * matchedRange.price;
-              context += `\n  ➤ ${askedQuantity}件对应价格: ¥${matchedRange.price}/${matchedRange.unit}，总价约 ¥${total.toFixed(2)}`;
-            }
-          }
         }
         
-        if (p.packaging_info) context += `\n包装: ${p.packaging_info}`;
-        if (p.dimensions) context += `\n尺寸: ${p.dimensions}`;
-        if (p.box_specs) context += `\n箱规: ${p.box_specs}`;
-        if (p.remarks_text) context += `\n备注: ${p.remarks_text}`;
-      });
-    } else if (hasProductData) {
-      // 非报价问题但有产品信息 - 简要展示
-      context += '\n\n【相关产品信息】\n';
-      context += products
-        .map((p, i) => {
-          let info = `[产品${i + 1}] ${p.product_name}`;
-          if (p.specifications) info += ` (${p.specifications})`;
-          info += `\n货号: ${p.product_code}`;
-          if (p.packaging_info) info += `\n包装: ${p.packaging_info}`;
-          return info;
-        })
-        .join('\n\n');
-    }
+        return info;
+      })
+      .join('\n\n');
   }
 
   // 历史问答上下文
   if (historyEntries && historyEntries.length > 0) {
     context += '\n\n【历史问答参考】\n';
     context += historyEntries
-      .map((h, i: number) =>
-        `[历史${i + 1}] 问: ${h.question}\n答: ${h.answer.slice(0, 200)}...`
+      .map((h: Record<string, unknown>, i: number) =>
+        `[历史${i + 1}] 问: ${(h as { question: string }).question}\n答: ${(h as { answer: string }).answer.slice(0, 200)}...`
       )
       .join('\n\n');
   }
 
   // ========== 构建系统提示 ==========
-  let systemPrompt: string;
-  
-  if (hasKnowledgeData || hasProductData) {
-    // 有数据 - 基于数据回复
-    systemPrompt = `你是一位专业的询盘话术顾问，根据用户的问题提供精准回复。
+  const systemPrompt = `你是一位专业的询盘话术顾问，同时也具备产品报价能力。你的任务是根据用户的问题，提供精准专业的询盘回复或报价信息。
 
-参考信息优先级：
-1. 知识库话术 - 最权威，优先使用
-2. 产品报价信息 - 如有匹配数量，给出对应价格
-3. 历史问答参考 - 作为补充
+能力范围：
+1. **报价咨询** - 当用户询问产品价格时，参考产品报价信息，根据询问的数量给出对应价格区间
+2. **产品信息** - 当用户询问产品规格、包装、尺寸等信息时，从产品报价中提取并呈现
+3. **话术生成** - 当用户需要回复客户询盘时，生成专业、礼貌、有说服力的中文回复
+
+报价规则：
+- 根据用户提到的数量，匹配价格区间并报价
+- 如果数量不在区间内，告知用户联系业务确认
+- 报价时说明产品名称、规格、价格和单位
 
 回复要求：
 1. 回复必须专业、礼貌，使用中文
-2. 优先使用参考信息中的内容，但不要照搬，要适配用户的具体问题
-3. 语言简洁有力，避免冗长
-4. 不要使用"Dear"等英文称呼，直接用中文问候语
+2. 针对具体问题给出有针对性的回复
+3. 如有参考信息，请结合参考但不要照搬
+4. 语言简洁有力，避免冗长
+5. 不要使用"Dear"等英文称呼，直接用中文问候语
+${context ? `\n\n以下是从系统中匹配到的参考信息：\n${context}` : '\n\n注意：系统中暂无匹配的参考信息，请根据你的专业知识回复，或提示用户提供更多细节。'}`;
 
-${context}`;
-  } else {
-    // 无数据 - AI合理发挥但需标注
-    systemPrompt = `你是一位专业的询盘话术顾问。
-
-注意：知识库中暂无相关资料，请根据你的专业知识给出合理的回复建议。
-
-回复要求：
-1. **必须在开头明确标注**："【知识库暂无相关资料，以下为AI建议，仅供参考】"
-2. 回复专业、礼貌，使用中文
-3. 给出合理的建议或通用话术参考
-4. 最后可提示用户："如需更精准的回复，可将相关话术添加到知识库"
-5. 不要使用"Dear"等英文称呼
-
-用户问题：${question}`;
-  }
-
+  // Call LLM with streaming
   const customHeaders = HeaderUtils.extractForwardHeaders(req.headers);
   const config = new Config();
   const llmClient = new LLMClient(config, customHeaders);
@@ -267,150 +179,9 @@ ${context}`;
 
   const stream = llmClient.stream(messages, {
     model: 'doubao-seed-2-0-lite-260215',
-    temperature: hasKnowledgeData || hasProductData ? 0.5 : 0.7,
+    temperature: 0.7,
   });
 
-  return createStreamingResponse(stream, client, enterpriseId, question, matchedEntryId);
-}
-
-// 搜索知识库
-async function searchKnowledge(
-  client: ReturnType<typeof getSupabaseClientOrThrow>,
-  enterpriseId: string,
-  keywords: string[],
-  question: string
-): Promise<Array<{
-  id: string;
-  question: string;
-  answer: string;
-  categories: Array<{ name: string }> | null;
-}> | null> {
-  console.log('知识库搜索 - enterpriseId:', enterpriseId);
-  console.log('知识库搜索 - keywords:', keywords);
-  console.log('知识库搜索 - question:', question);
-  
-  // 先获取该企业所有知识库条目，再在内存中过滤
-  const { data: allData, error: allError } = await client
-    .from('knowledge_entries')
-    .select('id, question, answer, categories(name)')
-    .eq('is_active', true)
-    .eq('enterprise_id', enterpriseId);
-  
-  if (allError) {
-    console.error('获取知识库失败:', allError.message);
-    return null;
-  }
-  
-  console.log('知识库搜索 - 总条目数:', allData?.length || 0);
-  
-  if (!allData || allData.length === 0) return null;
-  
-  // 在内存中搜索关键词
-  const searchTerms = keywords.length > 0 ? keywords : [question];
-  const matchedEntries = allData.filter(entry => {
-    const questionText = entry.question || '';
-    const answerText = entry.answer || '';
-    return searchTerms.some(term => 
-      questionText.toLowerCase().includes(term.toLowerCase()) ||
-      answerText.toLowerCase().includes(term.toLowerCase())
-    );
-  });
-  
-  console.log('知识库搜索 - 匹配条目数:', matchedEntries.length);
-  if (matchedEntries.length > 0) {
-    console.log('知识库搜索 - 匹配结果:', matchedEntries.map(e => e.question?.substring(0, 50)));
-  }
-  
-  return matchedEntries.slice(0, 10);
-}
-
-// 搜索产品
-async function searchProducts(
-  client: ReturnType<typeof getSupabaseClientOrThrow>,
-  enterpriseId: string,
-  keywords: string[]
-): Promise<Array<{
-  id: string;
-  product_code: string;
-  product_name: string;
-  specifications: string | null;
-  packaging_info: string | null;
-  weight: number | null;
-  dimensions: string | null;
-  box_specs: string | null;
-  remarks_text: string | null;
-  price_ranges: Array<{ min_quantity: number; max_quantity: number | null; price: number; unit: string }> | null;
-}> | null> {
-  if (keywords.length === 0) return null;
-  
-  const promises = keywords.map(async (keyword: string) => {
-    const { data, error } = await client
-      .from('product_quotations')
-      .select('id, product_code, product_name, specifications, packaging_info, weight, dimensions, box_specs, remarks_text')
-      .eq('enterprise_id', enterpriseId)
-      .or(`product_name.ilike.%${keyword}%,product_code.ilike.%${keyword}%,specifications.ilike.%${keyword}%`)
-      .limit(5);
-    
-    if (error) console.error('搜索产品关键词失败:', keyword, error.message);
-    return data || [];
-  });
-  
-  const results = await Promise.all(promises);
-  const allProducts = results.flat();
-  // 添加 price_ranges: null 用于后续填充
-  return allProducts.filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i).map(p => ({
-    ...p,
-    price_ranges: null as Array<{ min_quantity: number; max_quantity: number | null; price: number; unit: string }> | null
-  }));
-}
-
-// 搜索历史问答
-async function searchHistory(
-  client: ReturnType<typeof getSupabaseClientOrThrow>,
-  enterpriseId: string,
-  keywords: string[],
-  question: string
-): Promise<Array<{ question: string; answer: string }> | null> {
-  if (keywords.length > 0) {
-    const promises = keywords.map(async (term: string) => {
-      const { data, error } = await client
-        .from('qa_history')
-        .select('question, answer')
-        .eq('enterprise_id', enterpriseId)
-        .or(`question.ilike.%${term}%,answer.ilike.%${term}%`)
-        .order('created_at', { ascending: false })
-        .limit(2);
-      
-      if (error) console.error('搜索历史问答失败:', term, error.message);
-      return data || [];
-    });
-    
-    const results = await Promise.all(promises);
-    const allHistory = results.flat();
-    return allHistory.filter((h, i, arr) => arr.findIndex(x => x.question === h.question) === i);
-  }
-  
-  const { data, error } = await client
-    .from('qa_history')
-    .select('question, answer')
-    .eq('enterprise_id', enterpriseId)
-    .or(`question.ilike.%${question}%,answer.ilike.%${question}%`)
-    .order('created_at', { ascending: false })
-    .limit(2);
-  
-  if (error) console.error('搜索历史问答失败:', error.message);
-  return data;
-}
-
-// 创建流式响应的辅助函数
-function createStreamingResponse(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  stream: AsyncGenerator<any>,
-  client: ReturnType<typeof getSupabaseClientOrThrow>,
-  enterpriseId: string,
-  question: string,
-  matchedEntryId: string | null
-) {
   const encoder = new TextEncoder();
   const readableStream = new ReadableStream({
     async start(controller) {
@@ -426,7 +197,7 @@ function createStreamingResponse(
           }
         }
 
-        // Save to QA history
+        // Save to QA history (enterprise-scoped) - fire and forget
         const historyInsert: Record<string, unknown> = {
           question,
           answer: fullAnswer,
@@ -435,6 +206,7 @@ function createStreamingResponse(
           enterprise_id: enterpriseId,
         };
 
+        // Non-blocking save
         client
           .from('qa_history')
           .insert(historyInsert)
@@ -444,6 +216,7 @@ function createStreamingResponse(
             }
           });
 
+        // Update usage count for matched entry - fire and forget
         if (matchedEntryId) {
           client
             .rpc('increment_entry_usage', { entry_id: matchedEntryId })
