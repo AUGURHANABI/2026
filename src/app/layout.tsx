@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { SupabaseConfigProvider } from '@/lib/supabase-config-inject';
-import { AuthProvider } from '@/lib/auth-context';
-import { PermissionProvider } from '@/lib/permission-context';
+import { SupabaseConfigProvider } from '@/shared/lib/supabase-config-inject';
+import { AuthProvider } from '@/shared/lib/auth-context';
+import { PermissionProvider } from '@/shared/lib/permission-context';
 
 export const metadata: Metadata = {
   title: '询盘话术知识库',

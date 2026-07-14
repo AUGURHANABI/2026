@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getSupabaseBrowserClientWithRetry } from '@/lib/supabase-browser';
-import { useSupabaseConfig } from '@/lib/supabase-config-inject';
+import { getSupabaseBrowserClientWithRetry } from '@/shared/lib/supabase-browser';
+import { useSupabaseConfig } from '@/shared/lib/supabase-config-inject';
 export default function LoginPage() {
   const router = useRouter();
   const { isLoading: configLoading } = useSupabaseConfig();

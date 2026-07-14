@@ -2,17 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/auth-context';
-import { usePermissions } from '@/lib/permission-context';
-import { Sidebar } from '@/components/knowledge-base/sidebar';
-import { KnowledgeList } from '@/components/knowledge-base/knowledge-list';
-import { AIQA } from '@/components/knowledge-base/ai-qa';
-import { CategoryManager } from '@/components/knowledge-base/category-manager';
-import { TagManager } from '@/components/knowledge-base/tag-manager';
-import { Statistics } from '@/components/knowledge-base/statistics';
-import PermissionSettings from '@/components/knowledge-base/permission-settings';
-import DeveloperDashboard from '@/components/knowledge-base/developer-dashboard';
-import QuotationList from '@/components/knowledge-base/quotation-list';
+import { useAuth } from '@/shared/lib/auth-context';
+import { usePermissions } from '@/shared/lib/permission-context';
+import { Sidebar } from '@/shared/components/sidebar';
+import { KnowledgeList } from '@/modules/knowledge/components/knowledge-list';
+import { AIQA } from '@/modules/qa/components/ai-qa';
+import { CategoryManager } from '@/modules/categories/components/category-manager';
+import { TagManager } from '@/modules/tags/components/tag-manager';
+import { Statistics } from '@/modules/statistics/components/statistics';
+import PermissionSettings from '@/modules/permissions/components/permission-settings';
+import DeveloperDashboard from '@/modules/developer/components/developer-dashboard';
+import QuotationList from '@/modules/quotations/components/quotation-list';
 
 type ActiveTab = 'knowledge' | 'qa' | 'quotations' | 'categories' | 'tags' | 'statistics' | 'permissions' | 'developer';
 
@@ -50,7 +50,7 @@ export default function Home() {
         if (!enterpriseId) return;
 
         // Get session token from Supabase
-        const { getSupabaseBrowserClientWithRetry } = await import('@/lib/supabase-browser');
+        const { getSupabaseBrowserClientWithRetry } = await import('@/shared/lib/supabase-browser');
         const supabase = await getSupabaseBrowserClientWithRetry();
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData.session?.access_token;
