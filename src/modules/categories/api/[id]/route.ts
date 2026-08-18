@@ -9,12 +9,16 @@ export async function GET(
   const user = await getAuthUser(req);
   if (!user) return unauthorizedResponse();
 
+  const enterpriseId = await getEnterpriseId(req, user.id);
+  if (!enterpriseId) return forbiddenResponse();
+
   const { id } = await params;
   const client = getSupabaseClientOrThrow();
   const { data, error } = await client
     .from('categories')
     .select('*')
     .eq('id', id)
+    .eq('enterprise_id', enterpriseId)
     .maybeSingle();
 
   if (error) throw new Error(`查询分类失败: ${error.message}`);
@@ -31,10 +35,9 @@ export async function PUT(
 
   // Check permission: category:manage
   const enterpriseId = await getEnterpriseId(req, user.id);
-  if (enterpriseId) {
-    const canManage = await checkPermission(user.id, enterpriseId, 'category:manage');
-    if (!canManage) return forbiddenResponse('category:manage');
-  }
+  if (!enterpriseId) return forbiddenResponse();
+  const canManage = await checkPermission(user.id, enterpriseId, 'category:manage');
+  if (!canManage) return forbiddenResponse('category:manage');
 
   const { id } = await params;
   const client = getSupabaseClientOrThrow();
@@ -45,6 +48,7 @@ export async function PUT(
     .from('categories')
     .update({ name, description, sort_order, updated_at: new Date().toISOString() })
     .eq('id', id)
+    .eq('enterprise_id', enterpriseId)
     .select()
     .maybeSingle();
 
@@ -62,10 +66,9 @@ export async function DELETE(
 
   // Check permission: category:manage
   const enterpriseId = await getEnterpriseId(req, user.id);
-  if (enterpriseId) {
-    const canManage = await checkPermission(user.id, enterpriseId, 'category:manage');
-    if (!canManage) return forbiddenResponse('category:manage');
-  }
+  if (!enterpriseId) return forbiddenResponse();
+  const canManage = await checkPermission(user.id, enterpriseId, 'category:manage');
+  if (!canManage) return forbiddenResponse('category:manage');
 
   const { id } = await params;
   const client = getSupabaseClientOrThrow();
@@ -74,7 +77,8 @@ export async function DELETE(
   const { count, error: countError } = await client
     .from('knowledge_entries')
     .select('*', { count: 'exact', head: true })
-    .eq('category_id', id);
+    .eq('category_id', id)
+    .eq('enterprise_id', enterpriseId);
 
   if (countError) throw new Error(`查询关联条目失败: ${countError.message}`);
   if (count && count > 0) {
@@ -84,7 +88,11 @@ export async function DELETE(
     );
   }
 
-  const { error } = await client.from('categories').delete().eq('id', id);
+  const { error } = await client
+    .from('categories')
+    .delete()
+    .eq('id', id)
+    .eq('enterprise_id', enterpriseId);
   if (error) throw new Error(`删除分类失败: ${error.message}`);
   return NextResponse.json({ success: true });
 }

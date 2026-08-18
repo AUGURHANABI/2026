@@ -127,6 +127,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         updated_by: user.id,
       })
       .eq('id', id)
+      .eq('enterprise_id', enterpriseId)
       .select()
       .single();
 

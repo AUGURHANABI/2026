@@ -55,29 +55,35 @@ export async function getAuthUser(req: NextRequest): Promise<User | null> {
  */
 export async function getEnterpriseId(req: NextRequest, userId: string): Promise<string | null> {
   const headerEnterpriseId = req.headers.get('x-enterprise-id');
-  if (headerEnterpriseId) return headerEnterpriseId;
-
   const url = new URL(req.url);
-  const enterpriseId = url.searchParams.get('enterprise_id');
-  if (enterpriseId) return enterpriseId;
+  const queryEnterpriseId = url.searchParams.get('enterprise_id');
+  let bodyEnterpriseId: string | null = null;
 
   try {
     const cloned = req.clone();
     const body = await cloned.json().catch(() => ({}));
-    if (body.enterprise_id) return body.enterprise_id;
+    if (typeof body.enterprise_id === 'string') bodyEnterpriseId = body.enterprise_id;
   } catch {
     // Ignore parse errors
   }
 
-  const client = getSupabaseClientOrThrow();
-  const { data: membership } = await client
+  const requestedEnterpriseId = headerEnterpriseId || queryEnterpriseId || bodyEnterpriseId;
+  const client = getPermissionClient();
+  if (!client) return null;
+
+  let membershipQuery = client
     .from('enterprise_members')
     .select('enterprise_id')
-    .eq('user_id', userId)
-    .limit(1)
-    .maybeSingle();
+    .eq('user_id', userId);
 
-  return membership?.enterprise_id || null;
+  if (requestedEnterpriseId) {
+    membershipQuery = membershipQuery.eq('enterprise_id', requestedEnterpriseId);
+  }
+
+  const { data: membership, error } = await membershipQuery.limit(1).maybeSingle();
+
+  if (error || !membership) return null;
+  return membership.enterprise_id;
 }
 
 /**
@@ -95,6 +101,60 @@ export async function getUserRole(userId: string, enterpriseId: string): Promise
     .maybeSingle();
 
   return membership?.role || null;
+}
+
+/**
+ * Verify that a knowledge entry belongs to the already-authorized enterprise.
+ * Use this before accessing child rows such as comments or versions with the
+ * service-role client, because that client intentionally bypasses RLS.
+ */
+export async function isKnowledgeEntryInEnterprise(
+  entryId: string,
+  enterpriseId: string
+): Promise<boolean> {
+  const client = getPermissionClient();
+  if (!client) return false;
+
+  const { data, error } = await client
+    .from('knowledge_entries')
+    .select('id')
+    .eq('id', entryId)
+    .eq('enterprise_id', enterpriseId)
+    .maybeSingle();
+
+  return !error && !!data;
+}
+
+/** Validate category/tag references before writing them with service_role. */
+export async function areKnowledgeReferencesInEnterprise(
+  enterpriseId: string,
+  categoryId?: string | null,
+  tagIds?: string[]
+): Promise<boolean> {
+  const client = getPermissionClient();
+  if (!client) return false;
+
+  if (categoryId) {
+    const { data, error } = await client
+      .from('categories')
+      .select('id')
+      .eq('id', categoryId)
+      .eq('enterprise_id', enterpriseId)
+      .maybeSingle();
+    if (error || !data) return false;
+  }
+
+  const uniqueTagIds = [...new Set((tagIds ?? []).filter(Boolean))];
+  if (uniqueTagIds.length > 0) {
+    const { data, error } = await client
+      .from('tags')
+      .select('id')
+      .eq('enterprise_id', enterpriseId)
+      .in('id', uniqueTagIds);
+    if (error || (data?.length ?? 0) !== uniqueTagIds.length) return false;
+  }
+
+  return true;
 }
 
 /**

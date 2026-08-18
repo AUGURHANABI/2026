@@ -14,15 +14,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '问题不能为空' }, { status: 400 });
   }
 
-  // Check permission: qa:ask
-  if (enterpriseId) {
-    // License check
-    const licenseErr = await checkLicenseExpired(enterpriseId);
-    if (licenseErr) return licenseErr;
+  if (!enterpriseId) return forbiddenResponse();
 
-    const canAsk = await checkPermission(user.id, enterpriseId, 'qa:ask');
-    if (!canAsk) return forbiddenResponse('qa:ask');
-  }
+  // Check permission: qa:ask
+  const licenseErr = await checkLicenseExpired(enterpriseId);
+  if (licenseErr) return licenseErr;
+
+  const canAsk = await checkPermission(user.id, enterpriseId, 'qa:ask');
+  if (!canAsk) return forbiddenResponse('qa:ask');
 
   // Reuse a single client for all operations (no token = service role)
   const client = getSupabaseClientOrThrow();
@@ -35,12 +34,6 @@ export async function POST(req: NextRequest) {
     .eq('is_active', true)
     .or(`question.ilike.%${question}%,answer.ilike.%${question}%`)
     .limit(3);
-  if (!enterpriseId) {
-    return new Response(JSON.stringify({ error: '请先加入企业' }), {
-      status: 403,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
   searchQuery = searchQuery.eq('enterprise_id', enterpriseId);
 
   const { data: entries, error: searchError } = await searchQuery;
@@ -130,6 +123,7 @@ export async function POST(req: NextRequest) {
             .from('knowledge_entries')
             .select('usage_count')
             .eq('id', matchedEntryId)
+            .eq('enterprise_id', enterpriseId)
             .maybeSingle()
             .then(({ data: entry }) => {
               if (entry) {
@@ -137,6 +131,7 @@ export async function POST(req: NextRequest) {
                   .from('knowledge_entries')
                   .update({ usage_count: (entry.usage_count as number) + 1 })
                   .eq('id', matchedEntryId)
+                  .eq('enterprise_id', enterpriseId)
                   .then(() => {});
               }
             });

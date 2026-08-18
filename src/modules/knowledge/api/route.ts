@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/shared/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, areKnowledgeReferencesInEnterprise, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/shared/lib/auth-helpers';
 
 export async function GET(req: NextRequest) {
   const user = await getAuthUser(req);
@@ -110,6 +110,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '问题和答案不能为空' }, { status: 400 });
   }
 
+  if (!(await areKnowledgeReferencesInEnterprise(enterpriseId, category_id, tag_ids))) {
+    return NextResponse.json({ error: '分类或标签不属于当前企业' }, { status: 400 });
+  }
+
   // Create the entry
   const insertData: Record<string, unknown> = { question, answer, category_id, enterprise_id: enterpriseId, current_version: 1 };
 
@@ -176,12 +180,26 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: '请选择要删除的条目' }, { status: 400 });
   }
 
+  // Resolve only entries owned by the authorized enterprise before touching
+  // child tables. Never use request-provided IDs directly with service_role.
+  const { data: ownedEntries, error: ownedEntriesError } = await client
+    .from('knowledge_entries')
+    .select('id')
+    .in('id', ids)
+    .eq('enterprise_id', enterpriseId);
+
+  if (ownedEntriesError) throw new Error(`查询待删除条目失败: ${ownedEntriesError.message}`);
+  const ownedIds = (ownedEntries ?? []).map((entry: { id: string }) => entry.id);
+  if (ownedIds.length === 0) {
+    return NextResponse.json({ success: true, deleted: 0 });
+  }
+
   // Delete related data first
   // Delete comments
   const { error: commentsError } = await client
     .from('entry_comments')
     .delete()
-    .in('entry_id', ids);
+    .in('entry_id', ownedIds);
 
   if (commentsError) console.error('删除评论失败:', commentsError.message);
 
@@ -189,7 +207,7 @@ export async function DELETE(req: NextRequest) {
   const { error: versionsError } = await client
     .from('entry_versions')
     .delete()
-    .in('entry_id', ids);
+    .in('entry_id', ownedIds);
 
   if (versionsError) console.error('删除版本记录失败:', versionsError.message);
 
@@ -197,7 +215,7 @@ export async function DELETE(req: NextRequest) {
   const { error: tagsError } = await client
     .from('knowledge_entry_tags')
     .delete()
-    .in('entry_id', ids);
+    .in('entry_id', ownedIds);
 
   if (tagsError) console.error('删除标签关联失败:', tagsError.message);
 
@@ -205,7 +223,8 @@ export async function DELETE(req: NextRequest) {
   const { error: qaError } = await client
     .from('qa_history')
     .delete()
-    .in('entry_id', ids);
+    .in('matched_entry_id', ownedIds)
+    .eq('enterprise_id', enterpriseId);
 
   if (qaError) console.error('删除问答历史失败:', qaError.message);
 
@@ -213,10 +232,10 @@ export async function DELETE(req: NextRequest) {
   const { error: deleteError } = await client
     .from('knowledge_entries')
     .delete()
-    .in('id', ids)
+    .in('id', ownedIds)
     .eq('enterprise_id', enterpriseId);
 
   if (deleteError) throw new Error(`批量删除失败: ${deleteError.message}`);
 
-  return NextResponse.json({ success: true, deleted: ids.length });
+  return NextResponse.json({ success: true, deleted: ownedIds.length });
 }

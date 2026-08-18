@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/shared/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, areKnowledgeReferencesInEnterprise, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/shared/lib/auth-helpers';
 
 export async function GET(
   req: NextRequest,
@@ -9,6 +9,9 @@ export async function GET(
   const user = await getAuthUser(req);
   if (!user) return unauthorizedResponse();
 
+  const enterpriseId = await getEnterpriseId(req, user.id);
+  if (!enterpriseId) return forbiddenResponse();
+
   const { id } = await params;
   const client = getSupabaseClientOrThrow();
 
@@ -16,6 +19,7 @@ export async function GET(
     .from('knowledge_entries')
     .select('*, categories(id, name), knowledge_entry_tags(tag_id, tags(id, name, color))')
     .eq('id', id)
+    .eq('enterprise_id', enterpriseId)
     .maybeSingle();
 
   if (error) throw new Error(`查询条目失败: ${error.message}`);
@@ -44,16 +48,20 @@ export async function PUT(
 
   // Check permission for content edits (question/answer/is_active changes)
   const enterpriseId = await getEnterpriseId(req, user.id);
-  if (enterpriseId) {
-    // License check
-    const licenseErr = await checkLicenseExpired(enterpriseId);
-    if (licenseErr) return licenseErr;
+  if (!enterpriseId) return forbiddenResponse();
 
-    const isContentEdit = question !== undefined || answer !== undefined || is_active !== undefined;
-    if (isContentEdit) {
-      const canEdit = await checkPermission(user.id, enterpriseId, 'entry:edit');
-      if (!canEdit) return forbiddenResponse('entry:edit');
-    }
+  // License check
+  const licenseErr = await checkLicenseExpired(enterpriseId);
+  if (licenseErr) return licenseErr;
+
+  const isContentEdit = question !== undefined || answer !== undefined || is_active !== undefined;
+  if (isContentEdit) {
+    const canEdit = await checkPermission(user.id, enterpriseId, 'entry:edit');
+    if (!canEdit) return forbiddenResponse('entry:edit');
+  }
+
+  if (!(await areKnowledgeReferencesInEnterprise(enterpriseId, category_id, tag_ids))) {
+    return NextResponse.json({ error: '分类或标签不属于当前企业' }, { status: 400 });
   }
 
   // Get current entry to check version
@@ -61,6 +69,7 @@ export async function PUT(
     .from('knowledge_entries')
     .select('current_version, question, answer')
     .eq('id', id)
+    .eq('enterprise_id', enterpriseId)
     .maybeSingle();
 
   if (fetchError) throw new Error(`查询当前条目失败: ${fetchError.message}`);
@@ -85,6 +94,7 @@ export async function PUT(
     .from('knowledge_entries')
     .update(updateData)
     .eq('id', id)
+    .eq('enterprise_id', enterpriseId)
     .select()
     .maybeSingle();
 
@@ -138,18 +148,22 @@ export async function DELETE(
 
   // Check permission: entry:delete
   const enterpriseId = await getEnterpriseId(req, user.id);
-  if (enterpriseId) {
-    // License check
-    const licenseErr = await checkLicenseExpired(enterpriseId);
-    if (licenseErr) return licenseErr;
+  if (!enterpriseId) return forbiddenResponse();
 
-    const canDelete = await checkPermission(user.id, enterpriseId, 'entry:delete');
-    if (!canDelete) return forbiddenResponse('entry:delete');
-  }
+  // License check
+  const licenseErr = await checkLicenseExpired(enterpriseId);
+  if (licenseErr) return licenseErr;
+
+  const canDelete = await checkPermission(user.id, enterpriseId, 'entry:delete');
+  if (!canDelete) return forbiddenResponse('entry:delete');
 
   const { id } = await params;
   const client = getSupabaseClientOrThrow();
-  const { error } = await client.from('knowledge_entries').delete().eq('id', id);
+  const { error } = await client
+    .from('knowledge_entries')
+    .delete()
+    .eq('id', id)
+    .eq('enterprise_id', enterpriseId);
   if (error) throw new Error(`删除条目失败: ${error.message}`);
   return NextResponse.json({ success: true });
 }
