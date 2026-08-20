@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, unauthorizedResponse } from '@/shared/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse } from '@/shared/lib/auth-helpers';
 
 export async function PUT(
   req: NextRequest,
@@ -8,6 +8,12 @@ export async function PUT(
 ) {
   const user = await getAuthUser(req);
   if (!user) return unauthorizedResponse();
+
+  const enterpriseId = await getEnterpriseId(req, user.id);
+  if (!enterpriseId) return forbiddenResponse();
+  if (!(await checkPermission(user.id, enterpriseId, 'entry:rate'))) {
+    return forbiddenResponse('entry:rate');
+  }
 
   const { id } = await params;
   const client = getSupabaseClientOrThrow();
@@ -22,6 +28,7 @@ export async function PUT(
     .from('qa_history')
     .update({ effectiveness_rating })
     .eq('id', id)
+    .eq('enterprise_id', enterpriseId)
     .select()
     .maybeSingle();
 
@@ -36,6 +43,7 @@ export async function PUT(
       .from('qa_history')
       .select('effectiveness_rating')
       .eq('matched_entry_id', matchedEntryId)
+      .eq('enterprise_id', enterpriseId)
       .not('effectiveness_rating', 'is', null);
 
     if (!ratingsError && ratings && ratings.length > 0) {
@@ -45,7 +53,8 @@ export async function PUT(
       await client
         .from('knowledge_entries')
         .update({ effectiveness_score: avg })
-        .eq('id', matchedEntryId);
+        .eq('id', matchedEntryId)
+        .eq('enterprise_id', enterpriseId);
     }
   }
 

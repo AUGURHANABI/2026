@@ -11,10 +11,9 @@ export async function PUT(
 
   // Check permission: tag:manage
   const enterpriseId = await getEnterpriseId(req, user.id);
-  if (enterpriseId) {
-    const canManage = await checkPermission(user.id, enterpriseId, 'tag:manage');
-    if (!canManage) return forbiddenResponse('tag:manage');
-  }
+  if (!enterpriseId) return forbiddenResponse();
+  const canManage = await checkPermission(user.id, enterpriseId, 'tag:manage');
+  if (!canManage) return forbiddenResponse('tag:manage');
 
   const { id } = await params;
   const client = getSupabaseClientOrThrow();
@@ -25,6 +24,7 @@ export async function PUT(
     .from('tags')
     .update({ name, color })
     .eq('id', id)
+    .eq('enterprise_id', enterpriseId)
     .select()
     .maybeSingle();
 
@@ -42,14 +42,17 @@ export async function DELETE(
 
   // Check permission: tag:manage
   const enterpriseId = await getEnterpriseId(req, user.id);
-  if (enterpriseId) {
-    const canManage = await checkPermission(user.id, enterpriseId, 'tag:manage');
-    if (!canManage) return forbiddenResponse('tag:manage');
-  }
+  if (!enterpriseId) return forbiddenResponse();
+  const canManage = await checkPermission(user.id, enterpriseId, 'tag:manage');
+  if (!canManage) return forbiddenResponse('tag:manage');
 
   const { id } = await params;
   const client = getSupabaseClientOrThrow();
-  const { error } = await client.from('tags').delete().eq('id', id);
+  const { error } = await client
+    .from('tags')
+    .delete()
+    .eq('id', id)
+    .eq('enterprise_id', enterpriseId);
   if (error) throw new Error(`删除标签失败: ${error.message}`);
   return NextResponse.json({ success: true });
 }

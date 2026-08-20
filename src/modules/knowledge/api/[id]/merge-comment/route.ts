@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/shared/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, isKnowledgeEntryInEnterprise, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/shared/lib/auth-helpers';
 
 // POST /api/knowledge/[id]/merge-comment — 将评论内容合并到答案中
 export async function POST(
@@ -12,16 +12,17 @@ export async function POST(
 
   // Check permission: comment:merge
   const enterpriseId = await getEnterpriseId(req, user.id);
-  if (enterpriseId) {
-    // License check
-    const licenseErr = await checkLicenseExpired(enterpriseId);
-    if (licenseErr) return licenseErr;
-
-    const canMerge = await checkPermission(user.id, enterpriseId, 'comment:merge');
-    if (!canMerge) return forbiddenResponse('comment:merge');
-  }
+  if (!enterpriseId) return forbiddenResponse();
+  const licenseErr = await checkLicenseExpired(enterpriseId);
+  if (licenseErr) return licenseErr;
+  const canMerge = await checkPermission(user.id, enterpriseId, 'comment:merge');
+  if (!canMerge) return forbiddenResponse('comment:merge');
 
   const { id } = await params;
+  if (!(await isKnowledgeEntryInEnterprise(id, enterpriseId))) {
+    return NextResponse.json({ error: '条目不存在' }, { status: 404 });
+  }
+
   const client = getSupabaseClientOrThrow();
   const body = await req.json();
   const { comment_id } = body;
@@ -66,7 +67,8 @@ export async function POST(
       current_version: newVersion,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', id);
+    .eq('id', id)
+    .eq('enterprise_id', enterpriseId);
 
   if (updateError) throw new Error(`更新答案失败: ${updateError.message}`);
 

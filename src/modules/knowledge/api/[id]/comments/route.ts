@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, getEnterpriseId, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/shared/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, isKnowledgeEntryInEnterprise, checkPermission, unauthorizedResponse, forbiddenResponse, checkLicenseExpired } from '@/shared/lib/auth-helpers';
 
 // GET /api/knowledge/[id]/comments — 获取条目评论列表
 export async function GET(
@@ -11,6 +11,12 @@ export async function GET(
   if (!user) return unauthorizedResponse();
 
   const { id } = await params;
+  const enterpriseId = await getEnterpriseId(req, user.id);
+  if (!enterpriseId) return forbiddenResponse();
+  if (!(await isKnowledgeEntryInEnterprise(id, enterpriseId))) {
+    return NextResponse.json({ error: '条目不存在' }, { status: 404 });
+  }
+
   const client = getSupabaseClientOrThrow();
 
   const { data, error } = await client
@@ -33,6 +39,12 @@ export async function POST(
   if (!user) return unauthorizedResponse();
 
   const { id } = await params;
+  const enterpriseId = await getEnterpriseId(req, user.id);
+  if (!enterpriseId) return forbiddenResponse();
+  if (!(await isKnowledgeEntryInEnterprise(id, enterpriseId))) {
+    return NextResponse.json({ error: '条目不存在' }, { status: 404 });
+  }
+
   const client = getSupabaseClientOrThrow();
   const body = await req.json();
   const { author, content, is_anonymous } = body;
@@ -77,16 +89,17 @@ export async function DELETE(
 
   // Check permission: comment:delete
   const enterpriseId = await getEnterpriseId(req, user.id);
-  if (enterpriseId) {
-    // License check
-    const licenseErr = await checkLicenseExpired(enterpriseId);
-    if (licenseErr) return licenseErr;
-
-    const canDelete = await checkPermission(user.id, enterpriseId, 'comment:delete');
-    if (!canDelete) return forbiddenResponse('comment:delete');
-  }
+  if (!enterpriseId) return forbiddenResponse();
+  const licenseErr = await checkLicenseExpired(enterpriseId);
+  if (licenseErr) return licenseErr;
+  const canDelete = await checkPermission(user.id, enterpriseId, 'comment:delete');
+  if (!canDelete) return forbiddenResponse('comment:delete');
 
   const { id } = await params;
+  if (!(await isKnowledgeEntryInEnterprise(id, enterpriseId))) {
+    return NextResponse.json({ error: '条目不存在' }, { status: 404 });
+  }
+
   const client = getSupabaseClientOrThrow();
   const commentId = req.nextUrl.searchParams.get('comment_id');
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, unauthorizedResponse } from '@/shared/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, isKnowledgeEntryInEnterprise, checkPermission, unauthorizedResponse, forbiddenResponse } from '@/shared/lib/auth-helpers';
 
 // PUT /api/knowledge/[id]/rate — 给知识库条目评分
 export async function PUT(
@@ -11,6 +11,15 @@ export async function PUT(
   if (!user) return unauthorizedResponse();
 
   const { id } = await params;
+  const enterpriseId = await getEnterpriseId(req, user.id);
+  if (!enterpriseId) return forbiddenResponse();
+  if (!(await checkPermission(user.id, enterpriseId, 'entry:rate'))) {
+    return forbiddenResponse('entry:rate');
+  }
+  if (!(await isKnowledgeEntryInEnterprise(id, enterpriseId))) {
+    return NextResponse.json({ error: '条目不存在' }, { status: 404 });
+  }
+
   const client = getSupabaseClientOrThrow();
   const body = await req.json();
   const { effectiveness_score } = body;
@@ -38,6 +47,7 @@ export async function PUT(
     .from('knowledge_entries')
     .update({ effectiveness_score: score, updated_at: new Date().toISOString() })
     .eq('id', id)
+    .eq('enterprise_id', enterpriseId)
     .select('id, effectiveness_score')
     .single();
 

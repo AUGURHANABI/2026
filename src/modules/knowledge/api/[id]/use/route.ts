@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, unauthorizedResponse } from '@/shared/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, isKnowledgeEntryInEnterprise, unauthorizedResponse, forbiddenResponse } from '@/shared/lib/auth-helpers';
 
 // 防重复：同一个 entry + answerIndex 在 30 秒内只计一次使用
 const recentUsage = new Map<string, number>();
@@ -25,6 +25,12 @@ export async function PUT(
   try {
     const supabase = getSupabaseClientOrThrow();
     const { id } = await params;
+    const enterpriseId = await getEnterpriseId(req, user.id);
+    if (!enterpriseId) return forbiddenResponse();
+    if (!(await isKnowledgeEntryInEnterprise(id, enterpriseId))) {
+      return NextResponse.json({ error: '条目不存在' }, { status: 404 });
+    }
+
     const body = await req.json().catch(() => ({}));
     const answerIndex = typeof body.answer_index === 'number' ? body.answer_index : -1;
 
@@ -84,7 +90,8 @@ export async function PUT(
         usage_count: newTotalCount,
         answer_usage_counts: answerUsageCounts,
       })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('enterprise_id', enterpriseId);
 
     if (error) throw error;
 

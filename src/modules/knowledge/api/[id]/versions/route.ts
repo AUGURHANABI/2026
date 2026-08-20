@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseClientOrThrow } from '@/storage/database/supabase-client';
-import { getAuthUser, unauthorizedResponse } from '@/shared/lib/auth-helpers';
+import { getAuthUser, getEnterpriseId, isKnowledgeEntryInEnterprise, unauthorizedResponse, forbiddenResponse } from '@/shared/lib/auth-helpers';
 
 export async function GET(
   req: NextRequest,
@@ -10,6 +10,12 @@ export async function GET(
   if (!user) return unauthorizedResponse();
 
   const { id } = await params;
+  const enterpriseId = await getEnterpriseId(req, user.id);
+  if (!enterpriseId) return forbiddenResponse();
+  if (!(await isKnowledgeEntryInEnterprise(id, enterpriseId))) {
+    return NextResponse.json({ error: '条目不存在' }, { status: 404 });
+  }
+
   const client = getSupabaseClientOrThrow();
 
   const { data, error } = await client
